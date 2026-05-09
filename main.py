@@ -41,7 +41,7 @@ def load_token():
             with open(TOKEN_FILE, 'r') as f:
                 data = json.load(f)
                 return data.get('github_token')
-        except:
+        except Exception:
             return None
     return None
 
@@ -87,7 +87,7 @@ def device_auth():
     try:
         webbrowser.open('https://github.com/login/device')
         print("  (已自动打开浏览器)")
-    except:
+    except Exception:
         print("  (请手动打开上面的链接)")
 
     # 第三步：轮询等待用户授权
@@ -181,13 +181,10 @@ def proxy(path):
     url = f"https://api.githubcopilot.com/{path}"
 
     headers = {
+        **VSCODE_HEADERS,
         'Content-Type': request.headers.get('Content-Type', 'application/json'),
         'Authorization': f'Bearer {copilot_token}',
         'Copilot-Integration-Id': 'vscode-chat',
-        'Editor-Version': 'vscode/1.96.0',
-        'Editor-Plugin-Version': 'copilot/1.246.0',
-        'User-Agent': 'GithubCopilot/1.246.0',
-        'Accept': 'application/json',
     }
 
     # 处理 OpenAI 兼容参数
@@ -199,7 +196,7 @@ def proxy(path):
             for key in ['api_key', 'api_base']:
                 data.pop(key, None)
             body = json.dumps(data).encode()
-        except:
+        except Exception:
             pass
 
     try:
@@ -290,6 +287,7 @@ def health():
         "copilot_token_ready": copilot_token is not None,
         "proxy_port": PROXY_PORT
     }
+
 def print_continue_config():
     print(f"\n{'=' * 50}")
     print(f"  Copilot Proxy 已启动!")

@@ -24,6 +24,14 @@ cd ..
 go build -o copilot-proxy ./cmd/copilot-proxy
 ```
 
+On Windows, the binary is named `copilot-proxy.exe` automatically by Go — or specify it explicitly:
+
+```bash
+go build -o copilot-proxy.exe ./cmd/copilot-proxy
+```
+
+The frontend build script (`frontend/build.js`) works on **Windows, macOS, and Linux** — no Unix shell commands needed.
+
 Linux requires a working Secret Service keyring. Desktop environments usually provide one; headless servers may need `gnome-keyring` or a compatible service.
 
 ## Usage
@@ -31,7 +39,11 @@ Linux requires a working Secret Service keyring. Desktop environments usually pr
 Start the proxy:
 
 ```bash
+# macOS / Linux
 ./copilot-proxy
+
+# Windows
+copilot-proxy.exe
 ```
 
 Then open the WebUI:
@@ -43,17 +55,29 @@ http://localhost:15432/ui/
 If you want to skip terminal login and complete authorization from the WebUI, start the server with:
 
 ```bash
+# macOS / Linux
 ./copilot-proxy --no-login serve
+
+# Windows
+copilot-proxy.exe --no-login serve
 ```
 
 Common commands:
 
 ```bash
+# macOS / Linux
 ./copilot-proxy login
 ./copilot-proxy logout
 ./copilot-proxy config show
 ./copilot-proxy config path
 ./copilot-proxy --config ./config.example.json serve
+
+# Windows
+copilot-proxy.exe login
+copilot-proxy.exe logout
+copilot-proxy.exe config show
+copilot-proxy.exe config path
+copilot-proxy.exe --config ./config.example.json serve
 ```
 
 On first run the app starts the GitHub device authorization flow. The GitHub token is saved to the system keyring; the short-lived Copilot token stays in memory and refreshes automatically.

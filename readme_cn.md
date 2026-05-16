@@ -24,6 +24,14 @@ cd ..
 go build -o copilot-proxy ./cmd/copilot-proxy
 ```
 
+在 Windows 上，Go 会自动生成 `copilot-proxy.exe`，也可以显式指定：
+
+```bash
+go build -o copilot-proxy.exe ./cmd/copilot-proxy
+```
+
+前端构建脚本 `frontend/build.js` 使用 Node.js API，**Windows、macOS、Linux 全平台兼容**，不再依赖 Unix shell 命令。
+
 也可以一条命令完成前端 + Go 编译：
 
 ```bash
@@ -43,7 +51,11 @@ Linux 需要可用的 Secret Service keyring（常见桌面环境已提供）。
 启动代理：
 
 ```bash
+# macOS / Linux
 ./copilot-proxy
+
+# Windows
+copilot-proxy.exe
 ```
 
 然后打开 WebUI：
@@ -55,7 +67,11 @@ http://localhost:15432/ui/
 如果你想跳过终端授权，直接从 WebUI 完成授权，可以这样启动：
 
 ```bash
+# macOS / Linux
 ./copilot-proxy --no-login serve
+
+# Windows
+copilot-proxy.exe --no-login serve
 ```
 
 首次运行会打开 GitHub 设备授权页面，按终端提示输入验证码。授权完成后，GitHub token 写入系统 keyring，Copilot 短期 token 只保存在进程内并定时刷新。
@@ -63,11 +79,19 @@ http://localhost:15432/ui/
 常用命令：
 
 ```bash
+# macOS / Linux
 ./copilot-proxy login
 ./copilot-proxy logout
 ./copilot-proxy config show
 ./copilot-proxy config path
 ./copilot-proxy --config ./config.example.json serve
+
+# Windows
+copilot-proxy.exe login
+copilot-proxy.exe logout
+copilot-proxy.exe config show
+copilot-proxy.exe config path
+copilot-proxy.exe --config ./config.example.json serve
 ```
 
 ## 配置

@@ -19,7 +19,7 @@
    - Copilot Pro
    - Copilot 教育版
 
-2. **Python 3.7+**
+2. **Python 3.10+**
 
 ## ⬇️ 下载安装
 
@@ -142,7 +142,7 @@ models:
 
 ### 修改端口
 
-编辑 `main.py` 顶部：
+编辑 `config.py` 顶部：
 
 ```python
 PROXY_PORT = 15432  # 改成你想要的端口

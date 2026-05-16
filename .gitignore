@@ -13,5 +13,5 @@ pyrightconfig.json
 *.json
 
 # Test Scripts
-test.*
+test*
 getmodels.*

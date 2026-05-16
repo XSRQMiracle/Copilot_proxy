@@ -19,7 +19,7 @@ Convert GitHub Copilot into an OpenAI-compatible API with one click. Works with 
    - Copilot Pro
    - Copilot Education
 
-2. **Python 3.7+**
+2. **Python 3.10+**
 
 ## ⬇️ Download & Install
 
@@ -142,7 +142,7 @@ Open the Continue sidebar in VS Code, select a model, and start chatting.
 
 ### Change Port
 
-Edit the top of `main.py`:
+Edit the top of `config.py`:
 
 ```python
 PROXY_PORT = 15432  # Change to your desired port

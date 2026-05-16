@@ -121,6 +121,7 @@ func geminiToOpenAI(model string, payload map[string]any, stream bool) map[strin
 		"messages": messages,
 		"stream":   stream,
 	}
+	ensureStreamUsage(result)
 	if gc, ok := payload["generationConfig"].(map[string]any); ok {
 		copyIfPresent(result, gc, "maxOutputTokens", "max_tokens")
 		copyIfPresent(result, gc, "temperature", "temperature")
@@ -184,6 +185,9 @@ func (h *Handler) serveGeminiGenerate(w http.ResponseWriter, r *http.Request, to
 		return
 	}
 	record := RequestRecord{Time: start, Protocol: "gemini", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: http.StatusOK, DurationMs: time.Since(start).Milliseconds()}
+	if model := stringValue(oaiData["model"]); model != "" {
+		record.Model = model
+	}
 	if usage, ok := oaiData["usage"].(map[string]any); ok {
 		record.PromptTokens, record.CompletionTokens, record.TotalTokens = tokensFromUsage(usage)
 	}
@@ -255,6 +259,7 @@ func (h *Handler) serveGeminiStream(w http.ResponseWriter, r *http.Request, toke
 		w.Header().Set("X-Gemini-Warning", "safety_settings_ignored")
 	}
 	flusher, _ := w.(http.Flusher)
+	streamRecord := RequestRecord{Time: start, Protocol: "gemini", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"])}
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 1024), 1024*1024)
 	for scanner.Scan() {
@@ -269,6 +274,10 @@ func (h *Handler) serveGeminiStream(w http.ResponseWriter, r *http.Request, toke
 		var chunk map[string]any
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
+		}
+		mergeStreamUsage(&streamRecord, chunk)
+		if model := stringValue(chunk["model"]); model != "" {
+			streamRecord.Model = model
 		}
 		choice := firstChoice(chunk)
 		delta, _ := choice["delta"].(map[string]any)
@@ -291,7 +300,9 @@ func (h *Handler) serveGeminiStream(w http.ResponseWriter, r *http.Request, toke
 		w.Write([]byte("\n\n"))
 		flush(flusher)
 	}
-	h.record(RequestRecord{Time: start, Protocol: "gemini", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: http.StatusOK, DurationMs: time.Since(start).Milliseconds()})
+	streamRecord.Status = http.StatusOK
+	streamRecord.DurationMs = time.Since(start).Milliseconds()
+	h.record(streamRecord)
 }
 
 func geminiFinishReason(reason string) string {

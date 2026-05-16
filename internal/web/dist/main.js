@@ -2,12 +2,20 @@
 const i18n = {
     zh: {
         refresh: "刷新",
-        auth: "授权",
+        auth: "GitHub 账号",
         switch_account: "切换账号",
         account_id: "账号 ID",
         account_name: "显示名称",
         add_account: "添加账号",
         start_auth: "开始 GitHub 授权",
+        add_github_account: "添加 GitHub 账号",
+        current_account: "当前账号",
+        account_quota: "账号额度",
+        no_accounts: "还没有已授权账号",
+        legacy_account: "未识别账号",
+        confirm_logout: "确认删除当前 GitHub 账号及其本机 token？",
+        copy_code: "复制",
+        code_copied: "授权码已复制",
         logout: "退出当前账号",
         device_code: "验证码",
         open_github: "打开 GitHub",
@@ -47,15 +55,51 @@ const i18n = {
         auth_done: "授权完成",
         logged_out: "已从系统 keyring 删除当前账号 token",
         quota_unavailable: "未发现稳定个人剩余额度接口",
+        success_rate: "成功率",
+        unlimited: "无限制",
+        remaining: "剩余",
+        chart_legend: "柱高 = 请求数 · 悬停查看 Token",
+        no_usage: "暂无用量数据",
+        quota_premium: "高级交互",
+        quota_chat: "对话",
+        quota_completions: "补全",
+        fallback_hint: "从下方可用模型点 + 加入；在列表中用 ↑↓ 调整顺序，最后点确认写入配置",
+        fallback_list: "回退模型列表",
+        available_models: "可用模型",
+        unavailable_models: "不可用模型",
+        confirm_fallback: "确认修改回退模型",
+        add_to_fallback: "加入回退",
+        remove_from_fallback: "移除",
+        fallback_saved: "回退模型已写入配置文件",
+        fallback_empty: "回退列表为空，将按 Copilot 可用模型自动选择",
+        move_up: "上移",
+        move_down: "下移",
+        request_details: "请求详情",
+        method: "方法",
+        path: "路径",
+        duration: "耗时",
+        prompt_tokens: "输入 Token",
+        completion_tokens: "输出 Token",
+        error: "错误",
+        success_label: "成功",
+        failed_label: "失败",
     },
     en: {
         refresh: "Refresh",
-        auth: "Auth",
+        auth: "GitHub accounts",
         switch_account: "Switch",
         account_id: "Account ID",
         account_name: "Display name",
         add_account: "Add account",
         start_auth: "Start GitHub auth",
+        add_github_account: "Add GitHub account",
+        current_account: "Current account",
+        account_quota: "Account quota",
+        no_accounts: "No authorized accounts yet",
+        legacy_account: "Unknown account",
+        confirm_logout: "Delete the current GitHub account and its local token?",
+        copy_code: "Copy",
+        code_copied: "Code copied",
         logout: "Logout current",
         device_code: "Code",
         open_github: "Open GitHub",
@@ -95,7 +139,41 @@ const i18n = {
         auth_done: "Authorized",
         logged_out: "Deleted current account token from system keyring",
         quota_unavailable: "No stable personal quota endpoint found",
+        success_rate: "Success rate",
+        unlimited: "Unlimited",
+        remaining: "remaining",
+        chart_legend: "Bar height = requests · hover for tokens",
+        no_usage: "No usage data yet",
+        quota_premium: "Premium",
+        quota_chat: "Chat",
+        quota_completions: "Completions",
+        fallback_hint: "Add models with + below; reorder with ↑↓, then confirm to save",
+        fallback_list: "Fallback list",
+        available_models: "Available models",
+        unavailable_models: "Unavailable models",
+        confirm_fallback: "Save fallback models",
+        add_to_fallback: "Add to fallback",
+        remove_from_fallback: "Remove",
+        fallback_saved: "Fallback models saved to config",
+        fallback_empty: "Fallback list is empty; Copilot will pick any usable model",
+        move_up: "Move up",
+        move_down: "Move down",
+        request_details: "Request details",
+        method: "Method",
+        path: "Path",
+        duration: "Duration",
+        prompt_tokens: "Prompt tokens",
+        completion_tokens: "Completion tokens",
+        error: "Error",
+        success_label: "Success",
+        failed_label: "Failed",
     },
+};
+const QUOTA_KEYS = ["premium_interactions", "chat", "completions"];
+const QUOTA_LABEL_KEYS = {
+    premium_interactions: "quota_premium",
+    chat: "quota_chat",
+    completions: "quota_completions",
 };
 const $ = (id) => {
     const element = document.getElementById(id);
@@ -108,6 +186,10 @@ let currentConfig = null;
 let currentLanguage = "zh";
 let pollTimer;
 let availableModels = [];
+let lastQuota = null;
+let lastStats = null;
+let expandedRequestId = null;
+let draftFallbackPrefixes = [];
 async function request(url, init) {
     const response = await fetch(url, {
         headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
@@ -146,14 +228,17 @@ async function loadConfig() {
     setField("keyring.service", account?.keyring_service ?? currentConfig.keyring.service);
     setField("keyring.account", account?.keyring_account ?? currentConfig.keyring.account);
     renderAccounts();
-    renderModelList();
+    syncDraftFromConfig();
+    renderFallbackUI();
 }
 async function loadStats() {
     const stats = await request("/api/stats");
+    lastStats = stats;
     $("metric-requests").textContent = String(stats.total_requests);
     $("metric-success").textContent = String(stats.successful);
     $("metric-failed").textContent = String(stats.failed);
     $("metric-tokens").textContent = String(stats.total_tokens);
+    renderSuccessRate(stats);
     renderUsage(stats);
     renderRequests(stats);
 }
@@ -162,12 +247,14 @@ async function loadQuota() {
         available: false,
         message: error instanceof Error ? error.message : String(error),
     }));
-    $("quota-summary").textContent = quota.available ? quota.message : t("quota_unavailable");
+    lastQuota = quota;
+    renderQuotaViews(quota);
 }
 async function loadModels() {
     const payload = await request("/api/models");
     availableModels = payload.data ?? [];
-    renderModelList();
+    syncDraftFromConfig();
+    renderFallbackUI();
 }
 async function saveConfig() {
     if (!currentConfig)
@@ -186,11 +273,10 @@ async function saveConfig() {
         next.auth.accounts[accountIndex].keyring_service = next.keyring.service;
         next.auth.accounts[accountIndex].keyring_account = next.keyring.account;
     }
-    next.fallback.preferred_prefixes = selectedFallbackModels();
     next.ui.language = $("language-select").value;
     next.ui.theme = $("theme-select").value;
     await request("/api/config", { method: "PUT", body: JSON.stringify(next) });
-    currentConfig = next;
+    await loadConfig();
     setMessage("config-message", `${t("saved")}，${t("restart_required")}`);
     await loadStatus();
 }
@@ -220,91 +306,413 @@ async function pollAuth() {
         window.clearInterval(pollTimer);
         $("device-box").classList.add("hidden");
         setMessage("auth-message", t("auth_done"));
-        await Promise.all([loadStatus(), loadModels(), loadQuota()]);
+        await Promise.all([loadConfig(), loadStatus(), loadModels(), loadQuota()]);
     }
     else {
         setMessage("auth-message", `${t("auth_waiting")}: ${result.status}`);
     }
 }
 async function logout() {
-    await request("/api/auth/logout", { method: "POST", body: "{}" });
+    if (!window.confirm(t("confirm_logout")))
+        return;
+    await request("/api/accounts/current", { method: "DELETE" });
     setMessage("auth-message", t("logged_out"));
-    await loadStatus();
+    await Promise.all([loadConfig(), loadStatus(), loadModels(), loadQuota()]);
 }
-async function addAccount() {
-    await request("/api/accounts", {
-        method: "POST",
-        body: JSON.stringify({ id: $("new-account-id").value.trim(), name: $("new-account-name").value.trim() }),
-    });
-    $("new-account-id").value = "";
-    $("new-account-name").value = "";
-    await loadConfig();
-}
-async function switchAccount() {
-    const id = $("account-select").value;
+async function switchAccount(id) {
     await request("/api/accounts/switch", { method: "POST", body: JSON.stringify({ id }) });
     await Promise.all([loadConfig(), loadStatus(), loadModels(), loadQuota()]);
 }
 function renderAccounts() {
     if (!currentConfig)
         return;
-    const select = $("account-select");
-    select.innerHTML = "";
-    for (const account of currentConfig.auth.accounts) {
-        const option = document.createElement("option");
-        option.value = account.id;
-        option.textContent = `${account.name} (${account.id})`;
-        select.append(option);
+    const list = $("account-list");
+    list.innerHTML = "";
+    const activeID = currentConfig.auth.active_account_id;
+    const githubAccounts = currentConfig.auth.accounts.filter((account) => account.github_user_login);
+    if (githubAccounts.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "account-empty";
+        empty.textContent = t("no_accounts");
+        list.append(empty);
+        return;
     }
-    select.value = currentConfig.auth.active_account_id;
+    for (const account of githubAccounts) {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = `account-card${account.id === activeID ? " active" : ""}`;
+        item.dataset.accountId = account.id;
+        item.innerHTML = `<strong>${escapeHtml(accountLabel(account))}</strong><span>${escapeHtml(account.github_user_login ? `@${account.github_user_login}` : t("legacy_account"))}</span>`;
+        if (account.id === activeID && lastQuota) {
+            const quota = document.createElement("div");
+            quota.className = "account-card-quota";
+            renderQuotaInto(lastQuota, quota);
+            item.append(quota);
+        }
+        list.append(item);
+    }
+}
+function accountLabel(account) {
+    if (!account)
+        return "-";
+    return account.github_user_login || account.name || account.id || t("legacy_account");
 }
 function activeAccount(cfg) {
     return cfg.auth.accounts.find((account) => account.id === cfg.auth.active_account_id) ?? cfg.auth.accounts[0];
 }
-function renderModelList() {
-    const container = $("model-list");
+function modelMatchesPref(model, pref) {
+    const p = pref.trim().toLowerCase();
+    if (!p)
+        return false;
+    return [model.id, model.version, model.name, model.family]
+        .filter((value) => Boolean(value))
+        .some((value) => value.toLowerCase().startsWith(p));
+}
+function isModelUsable(model) {
+    if (typeof model.available === "boolean")
+        return model.available;
+    const endpoint = currentConfig?.fallback.required_endpoint;
+    const supportsEndpoint = !endpoint || !model.supported_endpoints || model.supported_endpoints.length === 0 || model.supported_endpoints.includes(endpoint);
+    return model.policy?.state !== "disabled" && model.model_picker_enabled !== false && supportsEndpoint;
+}
+function findModelById(modelId) {
+    return availableModels.find((model) => model.id === modelId);
+}
+function findModelForPref(pref) {
+    const normalized = pref.trim().toLowerCase();
+    return (availableModels.find((model) => model.id.toLowerCase() === normalized) ??
+        availableModels.find((model) => modelMatchesPref(model, pref)));
+}
+function syncDraftFromConfig() {
+    const prefs = currentConfig?.fallback.preferred_prefixes ?? [];
+    draftFallbackPrefixes = [...prefs];
+}
+function renderFallbackUI() {
+    renderFallbackList();
+    renderModelCatalogs();
+}
+function renderFallbackList() {
+    const container = $("fallback-list");
     container.innerHTML = "";
-    const selected = new Set(currentConfig?.fallback.preferred_prefixes ?? []);
-    const fallbackModels = (currentConfig?.fallback.preferred_prefixes ?? []).map((id) => ({ id }));
-    const models = availableModels.length > 0 ? availableModels : fallbackModels;
-    for (const model of models) {
-        const enabled = model.policy?.state !== "disabled" && model.model_picker_enabled !== false;
-        const item = document.createElement("label");
-        item.className = `model-option ${enabled ? "" : "disabled"}`;
-        const checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.value = model.id;
-        checkbox.checked = selected.has(model.id);
-        item.append(checkbox);
-        const text = document.createElement("div");
-        text.innerHTML = `<strong>${model.id}</strong><span>${model.name ?? ""} ${model.vendor ? `· ${model.vendor}` : ""}</span>`;
-        item.append(text);
-        container.append(item);
+    if (draftFallbackPrefixes.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "fallback-empty";
+        empty.textContent = t("fallback_empty");
+        container.append(empty);
+        return;
     }
+    draftFallbackPrefixes.forEach((pref, index) => {
+        const model = findModelForPref(pref) ?? { id: pref };
+        container.append(buildFallbackRow(pref, model, index + 1));
+    });
+}
+function buildFallbackRow(pref, model, rank) {
+    const item = document.createElement("div");
+    item.className = "fallback-item";
+    item.dataset.modelId = pref;
+    const order = document.createElement("span");
+    order.className = "model-order";
+    order.textContent = String(rank);
+    const text = document.createElement("div");
+    text.className = "fallback-item-text";
+    const meta = [model.name, model.vendor].filter(Boolean).join(" · ");
+    const detail = pref === model.id ? meta : [model.id, meta].filter(Boolean).join(" · ");
+    text.innerHTML = `<strong>${escapeHtml(pref)}</strong><span>${escapeHtml(detail)}</span>`;
+    const actions = document.createElement("div");
+    actions.className = "model-actions";
+    const up = document.createElement("button");
+    up.type = "button";
+    up.className = "secondary model-move";
+    up.title = t("move_up");
+    up.textContent = "↑";
+    up.dataset.dir = "-1";
+    const down = document.createElement("button");
+    down.type = "button";
+    down.className = "secondary model-move";
+    down.title = t("move_down");
+    down.textContent = "↓";
+    down.dataset.dir = "1";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "secondary model-remove";
+    remove.title = t("remove_from_fallback");
+    remove.textContent = "×";
+    actions.append(up, down, remove);
+    item.append(order, text, actions);
+    return item;
+}
+function renderModelCatalogs() {
+    const availableRoot = $("available-models");
+    const disabledRoot = $("disabled-models");
+    const disabledPanel = $("disabled-models-panel");
+    availableRoot.innerHTML = "";
+    disabledRoot.innerHTML = "";
+    const inDraft = new Set(draftFallbackPrefixes.map((pref) => pref.trim().toLowerCase()));
+    const usable = [];
+    const disabled = [];
+    if (availableModels.length === 0) {
+        const hint = document.createElement("p");
+        hint.className = "catalog-empty";
+        hint.textContent = t("load_models");
+        availableRoot.append(hint);
+        disabledPanel.classList.add("hidden");
+        return;
+    }
+    for (const model of availableModels) {
+        if (inDraft.has(model.id.toLowerCase()))
+            continue;
+        if (isModelUsable(model))
+            usable.push(model);
+        else
+            disabled.push(model);
+    }
+    if (usable.length === 0) {
+        const hint = document.createElement("p");
+        hint.className = "catalog-empty";
+        hint.textContent = "—";
+        availableRoot.append(hint);
+    }
+    else {
+        for (const model of usable)
+            availableRoot.append(buildCatalogRow(model, true));
+    }
+    disabledPanel.classList.toggle("hidden", disabled.length === 0);
+    for (const model of disabled)
+        disabledRoot.append(buildCatalogRow(model, false));
+}
+function buildCatalogRow(model, canAdd) {
+    const row = document.createElement("div");
+    row.className = `catalog-item${canAdd ? "" : " disabled"}`;
+    row.dataset.modelId = model.id;
+    const text = document.createElement("div");
+    text.className = "catalog-item-text";
+    text.innerHTML = `<strong>${escapeHtml(model.id)}</strong><span>${escapeHtml(model.name ?? "")}${model.vendor ? ` · ${escapeHtml(model.vendor)}` : ""}</span>`;
+    if (canAdd) {
+        const add = document.createElement("button");
+        add.type = "button";
+        add.className = "secondary model-add";
+        add.title = t("add_to_fallback");
+        add.textContent = "+";
+        row.append(text, add);
+    }
+    else {
+        row.append(text);
+    }
+    return row;
+}
+function addToFallback(modelId) {
+    if (draftFallbackPrefixes.includes(modelId))
+        return;
+    draftFallbackPrefixes.push(modelId);
+    renderFallbackUI();
+}
+function removeFromFallback(modelId) {
+    draftFallbackPrefixes = draftFallbackPrefixes.filter((id) => id !== modelId);
+    renderFallbackUI();
+}
+function moveFallbackItem(modelId, delta) {
+    const index = draftFallbackPrefixes.indexOf(modelId);
+    const target = index + delta;
+    if (index < 0 || target < 0 || target >= draftFallbackPrefixes.length)
+        return;
+    const next = [...draftFallbackPrefixes];
+    const [item] = next.splice(index, 1);
+    next.splice(target, 0, item);
+    draftFallbackPrefixes = next;
+    renderFallbackUI();
+}
+async function confirmFallbackModels() {
+    const payload = await request("/api/fallback", {
+        method: "PUT",
+        body: JSON.stringify({ preferred_prefixes: draftFallbackPrefixes }),
+    });
+    draftFallbackPrefixes = payload.preferred_prefixes ?? draftFallbackPrefixes;
+    if (currentConfig)
+        currentConfig.fallback.preferred_prefixes = [...draftFallbackPrefixes];
+    setMessage("fallback-message", t("fallback_saved"));
+    renderFallbackUI();
+    await loadStatus();
+}
+function escapeHtml(value) {
+    return value
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+}
+function renderSuccessRate(stats) {
+    const total = stats.total_requests;
+    const rate = total > 0 ? Math.round((stats.successful / total) * 100) : 0;
+    $("success-rate-label").textContent = total > 0 ? `${rate}%` : "—";
+    $("success-rate-fill").style.width = total > 0 ? `${rate}%` : "0%";
+}
+function renderQuotaViews(quota) {
+    renderQuota(quota, "quota-visual", "quota-message");
+    renderAccounts();
+}
+function renderQuota(quota, visualID, messageID) {
+    const visual = $(visualID);
+    const message = $(messageID);
+    visual.innerHTML = "";
+    renderQuotaInto(quota, visual);
+    if (visual.childElementCount > 0) {
+        message.textContent = quota.message ?? "";
+        message.classList.toggle("hidden", !quota.message);
+        return;
+    }
+    message.textContent = quota.available ? (quota.message ?? "") : (quota.message ?? t("quota_unavailable"));
+    message.classList.remove("hidden");
+}
+function renderQuotaInto(quota, visual) {
+    visual.innerHTML = "";
+    if (quota.available && quota.snapshots) {
+        for (const key of QUOTA_KEYS) {
+            const snap = quota.snapshots[key];
+            if (!snap)
+                continue;
+            visual.append(buildQuotaBar(key, snap));
+        }
+    }
+}
+function buildQuotaBar(key, snap) {
+    const row = document.createElement("div");
+    row.className = "quota-bar";
+    const head = document.createElement("div");
+    head.className = "quota-bar-head";
+    const label = document.createElement("span");
+    label.className = "quota-bar-label";
+    label.textContent = t(QUOTA_LABEL_KEYS[key]);
+    const value = document.createElement("strong");
+    value.className = "quota-bar-value";
+    head.append(label, value);
+    const track = document.createElement("div");
+    track.className = "progress-track";
+    const fill = document.createElement("div");
+    fill.className = "progress-fill quota-fill";
+    if (snap.unlimited) {
+        value.textContent = t("unlimited");
+        fill.style.width = "100%";
+        fill.classList.add("unlimited");
+        row.classList.add("is-unlimited");
+    }
+    else {
+        const remaining = snap.remaining ?? snap.quota_remaining;
+        const entitlement = snap.entitlement;
+        let percent = snap.percent_remaining;
+        if (percent === undefined && remaining !== undefined && entitlement && entitlement > 0) {
+            percent = Math.min(100, Math.max(0, (remaining / entitlement) * 100));
+        }
+        const pct = percent ?? 0;
+        fill.style.width = `${pct}%`;
+        if (pct <= 15)
+            fill.classList.add("low");
+        else if (pct <= 40)
+            fill.classList.add("mid");
+        const parts = [];
+        if (remaining !== undefined)
+            parts.push(String(remaining));
+        if (entitlement !== undefined && entitlement > 0)
+            parts.push(`/${entitlement}`);
+        value.textContent =
+            parts.length > 0
+                ? `${parts.join("")} ${t("remaining")}${percent !== undefined ? ` · ${Math.round(pct)}%` : ""}`
+                : percent !== undefined
+                    ? `${Math.round(pct)}%`
+                    : "—";
+    }
+    track.append(fill);
+    row.append(head, track);
+    return row;
 }
 function renderUsage(stats) {
     const container = $("model-usage");
     container.innerHTML = "";
     const entries = Object.entries(stats.by_model).sort((a, b) => b[1].requests - a[1].requests);
-    for (const [model, usage] of entries) {
-        const item = document.createElement("div");
-        item.innerHTML = `<strong>${model}</strong><span>${usage.requests} req · ${usage.total_tokens} tokens · ${usage.failures} failed</span>`;
-        container.append(item);
+    if (entries.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "chart-empty";
+        empty.textContent = t("no_usage");
+        container.append(empty);
+        return;
     }
-    if (entries.length === 0)
-        container.textContent = "-";
+    const maxRequests = Math.max(...entries.map(([, usage]) => usage.requests), 1);
+    const chart = document.createElement("div");
+    chart.className = "bar-chart";
+    chart.setAttribute("role", "img");
+    chart.setAttribute("aria-label", t("usage_by_model"));
+    for (const [model, usage] of entries.slice(0, 12)) {
+        const height = Math.max(6, Math.round((usage.requests / maxRequests) * 100));
+        const column = document.createElement("div");
+        column.className = "bar-chart-column";
+        const bar = document.createElement("div");
+        bar.className = "bar-chart-bar";
+        bar.style.height = `${height}%`;
+        bar.title = `${model}\n${usage.requests} req · ${usage.total_tokens} tokens · ${usage.failures} failed`;
+        const count = document.createElement("span");
+        count.className = "bar-chart-count";
+        count.textContent = String(usage.requests);
+        const name = document.createElement("span");
+        name.className = "bar-chart-label";
+        name.textContent = shortModelName(model);
+        name.title = model;
+        column.append(count, bar, name);
+        chart.append(column);
+    }
+    container.append(chart);
+}
+function shortModelName(model) {
+    const parts = model.split("/");
+    const tail = parts[parts.length - 1] ?? model;
+    return tail.length > 14 ? `${tail.slice(0, 12)}…` : tail;
 }
 function renderRequests(stats) {
     const body = $("request-table");
     body.innerHTML = "";
     for (const record of (stats.recent ?? []).slice(0, 80)) {
+        const expanded = expandedRequestId === record.id;
         const row = document.createElement("tr");
-        row.innerHTML = `<td>${new Date(record.time).toLocaleTimeString()}</td><td>${record.protocol}</td><td>${record.model || "-"}</td><td>${record.status}</td><td>${record.total_tokens}</td>`;
+        row.className = `request-row${record.success ? "" : " failed"}`;
+        row.dataset.id = String(record.id);
+        row.innerHTML = `
+      <td><button type="button" class="row-toggle secondary" aria-expanded="${expanded}" title="${t("request_details")}">${expanded ? "▾" : "▸"}</button></td>
+      <td>${escapeHtml(new Date(record.time).toLocaleString())}</td>
+      <td>${escapeHtml(record.protocol)}</td>
+      <td>${escapeHtml(record.model || "-")}</td>
+      <td>${record.status}</td>
+      <td>${record.total_tokens}</td>`;
         body.append(row);
+        if (expanded)
+            body.append(buildRequestDetailRow(record));
     }
 }
-function selectedFallbackModels() {
-    return Array.from(document.querySelectorAll("#model-list input:checked")).map((input) => input.value);
+function buildRequestDetailRow(record) {
+    const row = document.createElement("tr");
+    row.className = "request-detail";
+    row.dataset.id = String(record.id);
+    const outcome = record.success ? t("success_label") : t("failed_label");
+    const errorBlock = record.error
+        ? `<div class="detail-line"><dt>${t("error")}</dt><dd>${escapeHtml(record.error)}</dd></div>`
+        : "";
+    row.innerHTML = `<td colspan="6">
+    <div class="request-detail-panel">
+      <h4>${t("request_details")} #${record.id}</h4>
+      <dl class="detail-grid">
+        <div class="detail-line"><dt>${t("method")}</dt><dd>${escapeHtml(record.method || "-")}</dd></div>
+        <div class="detail-line"><dt>${t("path")}</dt><dd>${escapeHtml(record.path || "-")}</dd></div>
+        <div class="detail-line"><dt>${t("duration")}</dt><dd>${record.duration_ms} ms</dd></div>
+        <div class="detail-line"><dt>${t("status")}</dt><dd>${record.status} (${outcome})</dd></div>
+        <div class="detail-line"><dt>${t("prompt_tokens")}</dt><dd>${record.prompt_tokens}</dd></div>
+        <div class="detail-line"><dt>${t("completion_tokens")}</dt><dd>${record.completion_tokens}</dd></div>
+        ${errorBlock}
+      </dl>
+    </div>
+  </td>`;
+    return row;
+}
+function toggleRequestDetail(id) {
+    expandedRequestId = expandedRequestId === id ? null : id;
+    if (lastStats)
+        renderRequests(lastStats);
 }
 function setPill(id, label, ready, service = false) {
     const element = $(id);
@@ -355,28 +763,99 @@ function wire() {
     $("refresh").addEventListener("click", () => void refreshAll());
     $("start-auth").addEventListener("click", () => void startAuth().catch(showAuthError));
     $("logout").addEventListener("click", () => void logout().catch(showAuthError));
-    $("add-account").addEventListener("click", () => void addAccount().catch(showAuthError));
-    $("switch-account").addEventListener("click", () => void switchAccount().catch(showAuthError));
+    $("copy-device-code").addEventListener("click", () => void copyDeviceCode().catch(showAuthError));
+    $("account-list").addEventListener("click", (event) => {
+        const button = event.target.closest("button.account-card");
+        const id = button?.dataset.accountId;
+        if (id && currentConfig?.auth.active_account_id !== id)
+            void switchAccount(id).catch(showAuthError);
+    });
     $("save-config").addEventListener("click", () => void saveConfig().catch(showConfigError));
     $("load-models").addEventListener("click", () => void loadModels().catch(showConfigError));
+    $("confirm-fallback").addEventListener("click", () => void confirmFallbackModels().catch(showFallbackError));
+    $("fallback-list").addEventListener("click", (event) => {
+        const target = event.target;
+        const item = target.closest(".fallback-item");
+        const modelId = item?.dataset.modelId;
+        if (!modelId)
+            return;
+        const move = target.closest("button.model-move");
+        if (move) {
+            event.preventDefault();
+            moveFallbackItem(modelId, Number(move.dataset.dir));
+            return;
+        }
+        if (target.closest("button.model-remove")) {
+            event.preventDefault();
+            removeFromFallback(modelId);
+        }
+    });
+    $("available-models").addEventListener("click", (event) => {
+        const add = event.target.closest("button.model-add");
+        if (!add)
+            return;
+        event.preventDefault();
+        const modelId = add.closest(".catalog-item")?.dataset.modelId;
+        if (modelId)
+            addToFallback(modelId);
+    });
+    $("request-table").addEventListener("click", (event) => {
+        const target = event.target;
+        const toggle = target.closest("button.row-toggle");
+        const row = target.closest("tr.request-row");
+        if (!toggle && !row)
+            return;
+        const id = Number((row ?? toggle?.closest("tr"))?.dataset.id);
+        if (!Number.isFinite(id))
+            return;
+        event.preventDefault();
+        toggleRequestDetail(id);
+    });
     form.elements.namedItem("runtime.proxy_enabled").addEventListener("change", (event) => {
         void updateService(event.currentTarget.checked).catch(showConfigError);
     });
     $("language-select").addEventListener("change", (event) => {
         applyI18n(event.currentTarget.value);
+        renderAccounts();
+        if (lastQuota)
+            renderQuotaViews(lastQuota);
+        if (lastStats) {
+            renderUsage(lastStats);
+            renderSuccessRate(lastStats);
+        }
     });
     $("theme-select").addEventListener("change", (event) => {
         applyTheme(event.currentTarget.value);
     });
 }
+async function copyDeviceCode() {
+    const code = $("device-code").textContent?.trim() ?? "";
+    if (!code)
+        return;
+    if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(code);
+    }
+    else {
+        const input = document.createElement("input");
+        input.value = code;
+        document.body.append(input);
+        input.select();
+        document.execCommand("copy");
+        input.remove();
+    }
+    setMessage("auth-message", t("code_copied"));
+}
 async function refreshAll() {
-    await Promise.all([loadStatus(), loadStats(), loadQuota()]);
+    await Promise.all([loadConfig(), loadStatus(), loadStats(), loadQuota()]);
 }
 function showAuthError(error) {
     setMessage("auth-message", error instanceof Error ? error.message : String(error), true);
 }
 function showConfigError(error) {
     setMessage("config-message", error instanceof Error ? error.message : String(error), true);
+}
+function showFallbackError(error) {
+    setMessage("fallback-message", error instanceof Error ? error.message : String(error), true);
 }
 wire();
 void Promise.all([loadConfig(), loadStatus(), loadStats(), loadQuota()])

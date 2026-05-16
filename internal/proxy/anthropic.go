@@ -56,6 +56,7 @@ func (h *Handler) ServeAnthropicMessages(w http.ResponseWriter, r *http.Request)
 	oaiPayload := anthropicToOpenAI(payload)
 	if stream, _ := payload["stream"].(bool); stream {
 		oaiPayload["stream"] = true
+		ensureStreamUsage(oaiPayload)
 		h.serveAnthropicStream(w, r, token, oaiPayload, start)
 		return
 	}
@@ -95,6 +96,9 @@ func (h *Handler) ServeAnthropicMessages(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	record := RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: http.StatusOK, DurationMs: time.Since(start).Milliseconds()}
+	if model := stringValue(oaiData["model"]); model != "" {
+		record.Model = model
+	}
 	if usage, ok := oaiData["usage"].(map[string]any); ok {
 		record.PromptTokens, record.CompletionTokens, record.TotalTokens = tokensFromUsage(usage)
 	}
@@ -227,6 +231,7 @@ func (h *Handler) serveAnthropicStream(w http.ResponseWriter, r *http.Request, t
 	messageID := "msg_" + randomHex(24)
 	model := stringValue(oaiPayload["model"])
 	started := false
+	streamRecord := RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: model}
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 1024), 1024*1024)
 	for scanner.Scan() {
@@ -241,6 +246,10 @@ func (h *Handler) serveAnthropicStream(w http.ResponseWriter, r *http.Request, t
 		var chunk map[string]any
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
+		}
+		mergeStreamUsage(&streamRecord, chunk)
+		if model := stringValue(chunk["model"]); model != "" {
+			streamRecord.Model = model
 		}
 		if !started {
 			started = true
@@ -294,7 +303,10 @@ func (h *Handler) serveAnthropicStream(w http.ResponseWriter, r *http.Request, t
 		status = http.StatusServiceUnavailable
 		errMsg = "empty upstream stream"
 	}
-	h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: status, DurationMs: time.Since(start).Milliseconds(), Error: errMsg})
+	streamRecord.Status = status
+	streamRecord.DurationMs = time.Since(start).Milliseconds()
+	streamRecord.Error = errMsg
+	h.record(streamRecord)
 }
 
 func anthropicFinishReason(reason string) string {

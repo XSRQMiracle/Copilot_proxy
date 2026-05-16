@@ -215,15 +215,23 @@ func (m *Manager) StartDeviceFlow(ctx context.Context) (DeviceFlow, error) {
 }
 
 func (m *Manager) PollDeviceFlow(ctx context.Context, deviceCode string) (string, error) {
+	token, err := m.PollDeviceToken(ctx, deviceCode)
+	if err != nil {
+		return "", err
+	}
+	if err := m.SaveGitHubToken(token); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+func (m *Manager) PollDeviceToken(ctx context.Context, deviceCode string) (string, error) {
 	token, oauthErr, err := m.oauth.PollAccessToken(ctx, deviceCode)
 	if err != nil {
 		return "", err
 	}
 	if oauthErr != "" {
 		return "", OAuthPendingError(oauthErr)
-	}
-	if err := m.SaveGitHubToken(token); err != nil {
-		return "", err
 	}
 	return token, nil
 }

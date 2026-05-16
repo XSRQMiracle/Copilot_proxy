@@ -110,9 +110,12 @@ func mapsFromAny(items []any) []map[string]any {
 }
 
 func isEnabled(model map[string]any) bool {
+	if id, _ := model["id"].(string); strings.HasPrefix(id, "claude-opus-") {
+		return false
+	}
 	policy, _ := model["policy"].(map[string]any)
 	state, _ := policy["state"].(string)
-	return state != "disabled"
+	return state == "" || state == "enabled"
 }
 
 func isPickerEnabled(model map[string]any) bool {

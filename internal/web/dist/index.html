@@ -4,6 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Copilot Proxy</title>
+    <link rel="icon" href="./favicon.png" type="image/png" />
+    <link rel="shortcut icon" href="./favicon.png" type="image/png" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -34,26 +36,21 @@
       </section>
 
       <section class="grid two">
-        <article class="panel">
+        <article class="panel account-panel">
           <header>
-            <h2 data-i18n="auth">授权</h2>
+            <h2 data-i18n="auth">GitHub 账号</h2>
           </header>
-          <div class="row">
-            <select id="account-select"></select>
-            <button id="switch-account" class="secondary" type="button" data-i18n="switch_account">切换账号</button>
-          </div>
-          <div class="row">
-            <input id="new-account-id" data-i18n-placeholder="account_id" placeholder="账号 ID" />
-            <input id="new-account-name" data-i18n-placeholder="account_name" placeholder="显示名称" />
-            <button id="add-account" type="button" data-i18n="add_account">添加账号</button>
-          </div>
-          <div class="row">
-            <button id="start-auth" type="button" data-i18n="start_auth">开始 GitHub 授权</button>
-            <button id="logout" class="secondary" type="button" data-i18n="logout">退出当前账号</button>
+          <div class="account-main">
+            <div id="account-list" class="account-list"></div>
+            <div class="row">
+              <button id="start-auth" type="button" data-i18n="add_github_account">添加 GitHub 账号</button>
+              <button id="logout" class="secondary" type="button" data-i18n="logout">退出当前账号</button>
+            </div>
           </div>
           <div id="device-box" class="device hidden">
             <span data-i18n="device_code">验证码</span>
             <strong id="device-code"></strong>
+            <button id="copy-device-code" class="secondary compact" type="button" data-i18n="copy_code">复制</button>
             <a id="device-link" target="_blank" rel="noreferrer" data-i18n="open_github">打开 GitHub</a>
           </div>
           <p id="auth-message" class="message"></p>
@@ -64,16 +61,41 @@
             <h2 data-i18n="dashboard">仪表盘</h2>
           </header>
           <div class="metrics">
-            <div><span data-i18n="requests">请求</span><strong id="metric-requests">0</strong></div>
-            <div><span data-i18n="success">成功</span><strong id="metric-success">0</strong></div>
-            <div><span data-i18n="failed">失败</span><strong id="metric-failed">0</strong></div>
-            <div><span data-i18n="tokens">Token</span><strong id="metric-tokens">0</strong></div>
+            <div class="metric-card metric-requests">
+              <span data-i18n="requests">请求</span>
+              <strong id="metric-requests">0</strong>
+            </div>
+            <div class="metric-card metric-success">
+              <span data-i18n="success">成功</span>
+              <strong id="metric-success">0</strong>
+            </div>
+            <div class="metric-card metric-failed">
+              <span data-i18n="failed">失败</span>
+              <strong id="metric-failed">0</strong>
+            </div>
+            <div class="metric-card metric-tokens">
+              <span data-i18n="tokens">Token</span>
+              <strong id="metric-tokens">0</strong>
+            </div>
+          </div>
+          <div class="success-rate-wrap">
+            <div class="success-rate-head">
+              <span data-i18n="success_rate">成功率</span>
+              <strong id="success-rate-label">—</strong>
+            </div>
+            <div class="progress-track" aria-hidden="true">
+              <div id="success-rate-fill" class="progress-fill success-fill" style="width: 0%"></div>
+            </div>
           </div>
           <dl class="facts">
             <div><dt data-i18n="config_path">配置文件</dt><dd id="config-path">-</dd></div>
             <div><dt data-i18n="expires_at">Token 过期</dt><dd id="expires-at">-</dd></div>
-            <div><dt data-i18n="quota">额度</dt><dd id="quota-summary">-</dd></div>
           </dl>
+          <section class="quota-section" aria-labelledby="quota-heading">
+            <h3 id="quota-heading" data-i18n="quota">额度</h3>
+            <div id="quota-visual" class="quota-visual"></div>
+            <p id="quota-message" class="quota-message"></p>
+          </section>
         </article>
       </section>
 
@@ -105,7 +127,21 @@
             <h3 data-i18n="fallback_models">回退模型优先级</h3>
             <button id="load-models" class="secondary" type="button" data-i18n="load_models">加载模型</button>
           </div>
-          <div id="model-list" class="model-list"></div>
+          <p class="model-picker-hint" data-i18n="fallback_hint">从下方可用模型点 + 加入；在列表中用 ↑↓ 调整顺序，最后点确认写入配置</p>
+          <h4 class="fallback-heading" data-i18n="fallback_list">回退模型列表</h4>
+          <div id="fallback-list" class="fallback-list"></div>
+          <div class="fallback-actions">
+            <button id="confirm-fallback" type="button" data-i18n="confirm_fallback">确认修改回退模型</button>
+          </div>
+          <p id="fallback-message" class="message"></p>
+          <details id="available-models-panel" class="model-catalog-panel" open>
+            <summary data-i18n="available_models">可用模型</summary>
+            <div id="available-models" class="model-catalog"></div>
+          </details>
+          <details id="disabled-models-panel" class="model-catalog-panel">
+            <summary data-i18n="unavailable_models">不可用模型</summary>
+            <div id="disabled-models" class="model-catalog disabled-catalog"></div>
+          </details>
         </section>
         <details class="advanced">
           <summary data-i18n="advanced">高级</summary>
@@ -132,11 +168,12 @@
       </section>
 
       <section class="grid two">
-        <article class="panel">
+        <article class="panel panel-chart">
           <header>
             <h2 data-i18n="usage_by_model">模型用量</h2>
           </header>
-          <div id="model-usage" class="usage-list"></div>
+          <div id="model-usage" class="usage-chart-wrap" role="figure"></div>
+          <p class="chart-legend" data-i18n="chart_legend">柱高 = 请求数 · 悬停查看 Token</p>
         </article>
         <article class="panel">
           <header>
@@ -146,6 +183,7 @@
             <table>
               <thead>
                 <tr>
+                  <th class="col-toggle" aria-label="Details"></th>
                   <th data-i18n="time">时间</th>
                   <th data-i18n="protocol">协议</th>
                   <th data-i18n="model">模型</th>

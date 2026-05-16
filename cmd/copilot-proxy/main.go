@@ -141,6 +141,10 @@ func serve(cfg config.Config, configPath string, logger *log.Logger, interactive
 		defer cancel()
 		_ = httpServer.Shutdown(shutdownCtx)
 	}()
+	go func() {
+		time.Sleep(400 * time.Millisecond)
+		_ = auth.OpenBrowser(cfg.PublicBaseURL() + "/ui/")
+	}()
 
 	err := httpServer.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {

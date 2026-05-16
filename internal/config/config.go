@@ -304,7 +304,7 @@ func (c *Config) applyDefaults() {
 	if c.Headers.UserAgent == "" {
 		c.Headers.UserAgent = d.Headers.UserAgent
 	}
-	if len(c.Fallback.PreferredPrefixes) == 0 {
+	if c.Fallback.PreferredPrefixes == nil {
 		c.Fallback.PreferredPrefixes = d.Fallback.PreferredPrefixes
 	}
 	if c.Fallback.RequiredEndpoint == "" {

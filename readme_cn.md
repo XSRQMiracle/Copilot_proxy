@@ -24,6 +24,18 @@ cd ..
 go build -o copilot-proxy ./cmd/copilot-proxy
 ```
 
+也可以一条命令完成前端 + Go 编译：
+
+```bash
+cd frontend && npm run build:all
+```
+
+**注意：** Go 会把 `internal/web/dist` 打进二进制（`go:embed`）。只执行 `npm run build` 再重启旧的可执行文件，页面不会变。任选其一即可看到最新 UI：
+
+1. 在项目根目录运行服务（会自动从磁盘加载 `internal/web/dist`，无需重编 Go）
+2. 修改前端后执行 `go build` 或 `npm run build:all` 再重启
+3. 设置环境变量 `COPILOT_PROXY_UI_DIST=/path/to/dist` 指向构建产物目录
+
 Linux 需要可用的 Secret Service keyring（常见桌面环境已提供）。无桌面环境的服务器通常需要安装并启动 `gnome-keyring` 或兼容实现。
 
 ## 使用

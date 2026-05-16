@@ -110,12 +110,37 @@ func (s *Stats) Snapshot() StatsSnapshot {
 
 func tokensFromUsage(usage map[string]any) (int64, int64, int64) {
 	prompt := int64FromAny(usage["prompt_tokens"])
+	if prompt == 0 {
+		prompt = int64FromAny(usage["input_tokens"])
+	}
 	completion := int64FromAny(usage["completion_tokens"])
+	if completion == 0 {
+		completion = int64FromAny(usage["output_tokens"])
+	}
 	total := int64FromAny(usage["total_tokens"])
 	if total == 0 {
 		total = prompt + completion
 	}
 	return prompt, completion, total
+}
+
+func mergeStreamUsage(record *RequestRecord, chunk map[string]any) {
+	usage, ok := chunk["usage"].(map[string]any)
+	if !ok || len(usage) == 0 {
+		return
+	}
+	prompt, completion, total := tokensFromUsage(usage)
+	if prompt > 0 {
+		record.PromptTokens = prompt
+	}
+	if completion > 0 {
+		record.CompletionTokens = completion
+	}
+	if total > 0 {
+		record.TotalTokens = total
+	} else if record.PromptTokens > 0 || record.CompletionTokens > 0 {
+		record.TotalTokens = record.PromptTokens + record.CompletionTokens
+	}
 }
 
 func int64FromAny(value any) int64 {

@@ -1,10 +1,12 @@
 package proxy
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -143,11 +145,25 @@ func cleanBody(raw []byte) []byte {
 	}
 	delete(data, "api_key")
 	delete(data, "api_base")
+	ensureStreamUsage(data)
 	cleaned, err := json.Marshal(data)
 	if err != nil {
 		return raw
 	}
 	return cleaned
+}
+
+func ensureStreamUsage(payload map[string]any) {
+	stream, _ := payload["stream"].(bool)
+	if !stream {
+		return
+	}
+	options, _ := payload["stream_options"].(map[string]any)
+	if options == nil {
+		options = map[string]any{}
+	}
+	options["include_usage"] = true
+	payload["stream_options"] = options
 }
 
 func (h *Handler) tryFallback(ctx context.Context, method, upstreamURL, token, contentType string, body []byte, first *http.Response) (*http.Response, error) {
@@ -226,7 +242,38 @@ func copyResponse(w http.ResponseWriter, resp *http.Response) {
 func (h *Handler) copyAndRecordResponse(w http.ResponseWriter, resp *http.Response, record RequestRecord) {
 	record.Status = resp.StatusCode
 	if strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
-		copyResponse(w, resp)
+		flusher, _ := w.(http.Flusher)
+		for k, values := range resp.Header {
+			if _, excluded := excludedResponseHeaders[strings.ToLower(k)]; excluded {
+				continue
+			}
+			for _, value := range values {
+				w.Header().Add(k, value)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		scanner := bufio.NewScanner(resp.Body)
+		scanner.Buffer(make([]byte, 1024), 1024*1024)
+		for scanner.Scan() {
+			line := scanner.Text()
+			_, _ = fmt.Fprintln(w, line)
+			flush(flusher)
+			if strings.HasPrefix(line, "data: ") {
+				data := strings.TrimSpace(strings.TrimPrefix(line, "data: "))
+				if data != "" && data != "[DONE]" {
+					var chunk map[string]any
+					if err := json.Unmarshal([]byte(data), &chunk); err == nil {
+						if model := stringValue(chunk["model"]); model != "" {
+							record.Model = stringValue(chunk["model"])
+						}
+						mergeStreamUsage(&record, chunk)
+					}
+				}
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			record.Error = err.Error()
+		}
 		record.DurationMs = time.Since(record.Time).Milliseconds()
 		h.record(record)
 		return
@@ -251,8 +298,8 @@ func (h *Handler) copyAndRecordResponse(w http.ResponseWriter, resp *http.Respon
 	if len(body) > 0 {
 		var payload map[string]any
 		if err := json.Unmarshal(body, &payload); err == nil {
-			if record.Model == "" {
-				record.Model = stringValue(payload["model"])
+			if model := stringValue(payload["model"]); model != "" {
+				record.Model = model
 			}
 			if usage, ok := payload["usage"].(map[string]any); ok {
 				record.PromptTokens, record.CompletionTokens, record.TotalTokens = tokensFromUsage(usage)
@@ -281,7 +328,18 @@ func (h *Handler) authorized(r *http.Request) bool {
 	return false
 }
 
+func ShouldExcludeFromStats(path string) bool {
+	switch path {
+	case "/favicon.ico", "/robots.txt":
+		return true
+	}
+	return false
+}
+
 func (h *Handler) record(record RequestRecord) {
+	if ShouldExcludeFromStats(record.Path) {
+		return
+	}
 	if h.stats != nil {
 		h.stats.Record(record)
 	}

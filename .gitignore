@@ -1,12 +1,16 @@
-# IDE files
-.copilot_token.json
+# IDE
 .vscode/
-.DS_Store
+.idea/
+AGENTS.md
 
 # Python
 venv/
 __pycache__/
 *.pyc
+
+# config
+pyrightconfig.json
+*.json
 
 # Test Scripts
 test.*

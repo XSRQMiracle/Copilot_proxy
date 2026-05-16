@@ -9,11 +9,26 @@ from flask import Flask
 import auth
 import fallback
 import models
-from adapters.openai import OpenAIAdapter, get_fallback_model, set_fallback_model
+from adapters.anthropic import AnthropicAdapter
+from adapters.common import get_fallback_model, set_fallback_model
+from adapters.gemini import GeminiAdapter
+from adapters.openai import OpenAIAdapter
 from config import PROXY_PORT, TOKEN_FILE
 
 app = Flask(__name__)
 openai_adapter = OpenAIAdapter()
+anthropic_adapter = AnthropicAdapter()
+gemini_adapter = GeminiAdapter()
+
+
+@app.route('/v1/messages', methods=['POST'])
+def anthropic_messages():
+    return anthropic_adapter.handle_request('messages')
+
+
+@app.route('/v1beta/models/<path:gemini_path>', methods=['POST'])
+def gemini_models(gemini_path):
+    return gemini_adapter.handle_request(gemini_path)
 
 
 @app.route('/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'])

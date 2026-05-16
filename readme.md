@@ -1,240 +1,96 @@
 [English](./readme.md) | [中文](./readme_cn.md)
+
 # Copilot Proxy
 
-Convert GitHub Copilot into an OpenAI-compatible API with one click. Works with [Continue](https://continue.dev) and other plugins.
+Expose GitHub Copilot as an OpenAI-compatible API. The backend has been rewritten in Go, the long-lived GitHub token is stored in the system keyring, configuration is centralized in JSON, and a TypeScript UI is available at runtime.
 
+## Features
 
-## ✨ Features
+- OpenAI-compatible proxy endpoints such as `http://localhost:15432/v1/chat/completions`.
+- CLI-compatible startup: run the native binary directly; `python main.py` delegates to the Go backend for old workflows.
+- System keyring storage: Windows Credential Manager, macOS Keychain, and Linux Secret Service.
+- Central JSON config via the default OS config directory, `--config path`, or `COPILOT_PROXY_CONFIG`.
+- TypeScript UI at `http://localhost:15432/ui/` for status, login, logout, and config editing.
 
-- **One-Click Auth** - Automatic GitHub OAuth device-flow on first run, no manual token copying
-- **Auto Refresh** - Background automatic Copilot Token refresh, zero intervention needed
-- **Remember Login** - Token saved locally, auto-restored on next launch
-- **OpenAI Compatible** - Standard OpenAI API format, works with any compatible client
-- **Bypass Education/Free plan restrictions on models like Claude**
-
-## 📋 Prerequisites
-
-1. **GitHub account** with one of the following enabled:
-   - [Copilot Free](https://github.com/settings/copilot)
-   - Copilot Pro
-   - Copilot Education
-
-2. **Python 3.7+**
-
-## ⬇️ Download & Install
-
-### Download releases
-
-You can download prebuilt executables from the GitHub Releases page and run them directly:
-
-- **Windows**: `Copilot_Proxy-windows.exe`
-
-- **macOS**: `Copilot_Proxy-macos`
-
-  Make executable and run:
-
-  ```bash
-  chmod +x Copilot_Proxy-macos
-  ./Copilot_Proxy-macos
-  ```
-
-> All release files are automatically built by GitHub Actions, source code is fully open and auditable
-
-### Build from source
-
-1. Install dependencies
+## Build
 
 ```bash
-git clone https://github.com/Open-Copilot-Proxy/Copilot_Proxy.git
-cd Copilot_Proxy
-pip install -r requirements.txt
+cd frontend
+npm install
+npm run build
+cd ..
+go build -o copilot-proxy ./cmd/copilot-proxy
 ```
 
-2. Run the Script
+Linux requires a working Secret Service keyring. Desktop environments usually provide one; headless servers may need `gnome-keyring` or a compatible service.
+
+## Usage
+
+Start the proxy:
+
+```bash
+./copilot-proxy
+```
+
+Legacy launcher:
 
 ```bash
 python main.py
 ```
 
-## 🚀 Quick Start
+Common commands:
 
-### 1. First-Time Authorization
-
-The script will automatically open your browser. Follow the prompts:
-
-```
-[1/3] Requesting device verification code...
-
-[2/3] Please complete authorization in your browser:
-
-  ┌─────────────────────────────┐
-  │                             │
-  │     Code:  ABCD-1234        │
-  │                             │
-  └─────────────────────────────┘
-
-  Open: https://github.com/login/device
-  (Browser opened automatically)
-
-[3/3] Waiting for authorization...
-
-[✓] Authorization successful!
+```bash
+./copilot-proxy login
+./copilot-proxy logout
+./copilot-proxy config show
+./copilot-proxy config path
+./copilot-proxy --config ./config.example.json serve
 ```
 
-### 2. Configure Continue
+On first run the app starts the GitHub device authorization flow. The GitHub token is saved to the system keyring; the short-lived Copilot token stays in memory and refreshes automatically.
 
-Open Continue's `config.yaml` and add model configurations:
+## Configuration
+
+The default config is created on first run. You can also copy `config.example.json` and pass it with `--config`.
+
+Important fields:
+
+- `server.host` / `server.port`: bind address and port.
+- `copilot.api_base`: GitHub Copilot API base URL.
+- `keyring.service` / `keyring.account`: system keyring item names.
+- `fallback.preferred_prefixes`: fallback model priority.
+- `frontend.enabled`: enables `/ui/`.
+
+## Continue Example
 
 ```yaml
 models:
-    # Claude Sonnet
-  - name: Claude Sonnet 4.6 (Copilot_proxy)
+  - name: GPT-5.4 (Copilot Proxy)
     provider: openai
-    model: claude-sonnet-4.6
-    apiBase: http://localhost:{PROXY_PORT}
-    apiKey: "dummy"
+    model: gpt-5.4
+    apiBase: http://localhost:15432
+    apiKey: dummy
     roles:
       - chat
       - edit
-
-  # Claude Opus
-  - name: Claude Opus 4.6 (Copilot_proxy)
-    provider: openai
-    model: claude-opus-4.6
-    apiBase: http://localhost:{PROXY_PORT}
-    apiKey: "dummy"
-    roles:
-      - chat
-
-  # GPT-5.4
-  - name: GPT-5.4 (Copilot_proxy)
-    provider: openai
-    model: gpt-5.4
-    apiBase: http://localhost:{PROXY_PORT}
-    apiKey: "dummy"
-    roles:
-      - chat
-
-  # Gemini 3.1 Pro preview
-  - name: Gemini 3.1 Pro Preview (Copilot_proxy)
-    provider: openai
-    model: gemini-3.1-pro-preview
-    apiBase: http://localhost:{PROXY_PORT}
-    apiKey: "dummy"
-    roles:
-      - chat
-
-  # Code Completion (Tab)
-  - name: Codex Mini (Copilot)
-    provider: openai
-    model: gpt-5.1-codex-mini
-    apiBase: http://localhost:{PROXY_PORT}
-    apiKey: "dummy"
-    roles:
-      - autocomplete
 ```
 
-### 3. Start Using
+## API
 
-Open the Continue sidebar in VS Code, select a model, and start chatting.
+- `GET /`: health check.
+- `GET /fallback`: selected fallback model.
+- `GET /api/status`: UI status.
+- `GET /api/config`: read config.
+- `PUT /api/config`: save config, applied after restart.
+- `POST /api/auth/device/start`: start device auth.
+- `POST /api/auth/device/poll`: poll device auth.
+- `POST /api/auth/logout`: delete the GitHub token from keyring.
 
-## 🔧 Advanced Usage
+## Security
 
-### Change Port
+The Go backend does not read or write the old `.copilot_token.json` plaintext token file. After confirming you do not need rollback compatibility, remove that file.
 
-Edit the top of `main.py`:
-
-```python
-PROXY_PORT = 15432  # Change to your desired port
-```
-
-### Re-authorize
-
-Delete the token file and re-run:
-
-```bash
-rm .copilot_token.json
-python main.py
-```
-
-### Use as a Backend for Other Tools
-
-Any tool that supports the OpenAI API format can connect:
-
-```
-API Base: http://localhost:15432
-API Key:  any value (e.g. "dummy")
-Model:    claude-sonnet-4.6
-```
-
-### Model Fallback
-
-- **What it does**: If a requested model is unavailable for your Copilot account (the Copilot API returns a `model_not_supported` error), the proxy can automatically retry the request using a supported fallback model so clients don't fail immediately.
-
-- **How it works**: On startup the proxy selects a fallback model by querying the Copilot models endpoint (selection logic lives in `fallback.py`). The default priority list is defined in `fallback.py` (for example: `gpt-4.1`, `gpt-4o`, `gpt-5-mini`, `raptor-mini`). When the upstream returns a 400 with code `model_not_supported`, the proxy replaces the top-level `model` field in the client JSON with the chosen fallback model and retries once. The proxy also exposes the currently selected fallback via `GET /fallback`.
-
-- **Customize**: Edit `fallback.py` to change the `PREFERRED_PREFIXES` or the selection logic. The script will pick the first usable model matching the configured priorities.
-
-- **Check current fallback**:
-
-```bash
-curl -sS http://localhost:15432/fallback
-```
-
-- **Testing**: point a client at `http://localhost:15432` and request an unsupported model (e.g., `claude-mythos-preview`) — watch the proxy logs for fallback messages.
-
-## 🏗️ How It Works
-
-```
-Continue / Other Clients
-        │
-        │ POST /chat/completions (OpenAI format)
-        ▼
-┌───────────────────────┐
-│  copilot_proxy.py     │  localhost:15432
-│                       │
-│  • OAuth device flow  │
-│  • Auto token refresh │
-│  • Request forwarding │
-└───────────────────────┘
-        │
-        │ Bearer <copilot_token>
-        ▼
-GitHub Copilot API
-        │
-        ▼
-Claude / GPT / Gemini
-```
-
-1. **OAuth Authorization** - Obtain a long-lived `ghu_` token via GitHub device flow
-2. **Token Exchange** - Exchange the `ghu_` token for a short-lived Copilot token (~30 min validity)
-3. **Auto Refresh** - Background refresh of the Copilot token every 25 minutes
-4. **Request Forwarding** - Forward OpenAI-format requests to the Copilot API with valid credentials
-
-## ❓ FAQ
-
-### Q: Copilot Token refresh failed?
-
-Make sure your GitHub account has Copilot enabled: https://github.com/settings/copilot
-
-### Q: Model returns 401/403?
-
-The token may have expired. Restart the script to auto-refresh.
-
-### Q: Some models are unavailable?
-
-Different Copilot subscription tiers have access to different models. The free plan may not support all models.
-
-### Q: Can I use it on another computer?
-
-Each computer needs to run the script and authorize separately. Do not copy `.copilot_token.json` to other machines.
-
-### Q: Is it secure?
-
-- Tokens are only stored locally in your `.copilot_token.json` file
-- All requests communicate directly with the official GitHub API
-- No third-party servers involved
-
-## 📄 License
+## License
 
 MIT

@@ -1,240 +1,107 @@
 [English](./readme.md) | [中文](./readme_cn.md)
+
 # Copilot Proxy
 
-一键将 GitHub Copilot 转为 OpenAI 兼容 API，配合 [Continue](https://continue.dev) 等插件使用。
+将 GitHub Copilot 转为 OpenAI 兼容 API。后端已重写为 Go，长期 GitHub token 存入系统 keyring，配置集中放在 JSON 文件中，并提供 TypeScript 图形界面。
 
+## 特性
 
-## ✨ 特性
+- OpenAI 兼容代理：继续使用 `http://localhost:15432/v1/chat/completions` 等路径。
+- 保持 CLI 习惯：直接运行二进制即可启动；`python main.py` 会转发到 Go 版本。
+- 系统 keyring：Windows Credential Manager、macOS Keychain、Linux Secret Service，不再明文保存 `.copilot_token.json`。
+- 统一配置文件：默认位于系统配置目录，也支持 `--config path` 或 `COPILOT_PROXY_CONFIG`。
+- TypeScript 前端：启动后访问 `http://localhost:15432/ui/` 查看状态、授权、修改配置。
 
-- **一键授权** - 首次运行自动引导 GitHub OAuth 授权，无需手动复制 token
-- **自动刷新** - 后台自动刷新 Copilot Token，无需任何干预
-- **记住登录** - Token 保存在本地，下次启动自动恢复
-- **OpenAI兼容** - 标准 OpenAI API 格式，支持任何兼容的客户端
-- **绕过Education版本对Claude等模型的限制**
-
-## 📋 前提条件
-
-1. **GitHub 账号**，且已开通以下任一：
-   - [Copilot Free](https://github.com/settings/copilot) （免费版）
-   - Copilot Pro
-   - Copilot 教育版
-
-2. **Python 3.7+**
-
-## ⬇️ 下载安装
-
-### 从 Release 下载
-
-直接在 GitHub Releases 页面下载对应平台的可执行文件并运行：
-
-- **Windows**: `Copilot_Proxy-windows.exe`
-
-- **macOS**: `Copilot_Proxy-macos`
-
-  赋予可执行权限并运行：
-
-  ```bash
-  chmod +x Copilot_Proxy-macos
-  ./Copilot_Proxy-macos
-  ```
-
-> 所有release文件均由 GitHub Actions 自动构建生成，原代码完全公开可查
-
-### 从源码构建
-
-1. 安装依赖
+## 构建
 
 ```bash
-git clone https://github.com/Open-Copilot-Proxy/Copilot_Proxy.git
-cd Copilot_Proxy
-pip install -r requirements.txt
+cd frontend
+npm install
+npm run build
+cd ..
+go build -o copilot-proxy ./cmd/copilot-proxy
 ```
 
-2. 运行脚本
+Linux 需要可用的 Secret Service keyring（常见桌面环境已提供）。无桌面环境的服务器通常需要安装并启动 `gnome-keyring` 或兼容实现。
+
+## 使用
+
+启动代理：
+
+```bash
+./copilot-proxy
+```
+
+兼容旧入口：
 
 ```bash
 python main.py
 ```
 
-## 🚀 快速开始
+首次运行会打开 GitHub 设备授权页面，按终端提示输入验证码。授权完成后，GitHub token 写入系统 keyring，Copilot 短期 token 只保存在进程内并定时刷新。
 
-### 1. 首次授权
+常用命令：
 
-脚本会自动打开浏览器，按提示操作：
-
-```
-[1/3] 正在请求设备验证码...
-
-[2/3] 请在浏览器中完成授权:
-
-  ┌─────────────────────────────┐
-  │                             │
-  │     Code:  ABCD-1234        │
-  │                             │
-  └─────────────────────────────┘
-
-  打开: https://github.com/login/device
-  (已自动打开浏览器)
-
-[3/3] 等待授权中...
-
-[✓] 授权成功!
+```bash
+./copilot-proxy login
+./copilot-proxy logout
+./copilot-proxy config show
+./copilot-proxy config path
+./copilot-proxy --config ./config.example.json serve
 ```
 
-### 2. 配置 Continue
+## 配置
 
-打开 Continue 的 `config.yaml`，添加模型配置：
+默认配置首次运行时自动创建。也可以复制 `config.example.json` 后通过 `--config` 指定。
+
+关键字段：
+
+- `server.host` / `server.port`：监听地址和端口。
+- `copilot.api_base`：GitHub Copilot API 地址。
+- `keyring.service` / `keyring.account`：系统 keyring 中的条目名称。
+- `fallback.preferred_prefixes`：模型不可用时的回退优先级。
+- `frontend.enabled`：是否启用 `/ui/`。
+
+修改端口示例：
+
+```json
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 15432
+  }
+}
+```
+
+## Continue 配置
 
 ```yaml
 models:
-    # Claude Sonnet
-  - name: Claude Sonnet 4.6 (Copilot_proxy)
+  - name: GPT-5.4 (Copilot Proxy)
     provider: openai
-    model: claude-sonnet-4.6
-    apiBase: http://localhost:{PROXY_PORT}
-    apiKey: "dummy"
+    model: gpt-5.4
+    apiBase: http://localhost:15432
+    apiKey: dummy
     roles:
       - chat
       - edit
-
-  # Claude Opus
-  - name: Claude Opus 4.6 (Copilot_proxy)
-    provider: openai
-    model: claude-opus-4.6
-    apiBase: http://localhost:{PROXY_PORT}
-    apiKey: "dummy"
-    roles:
-      - chat
-
-  # GPT-5.4
-  - name: GPT-5.4 (Copilot_proxy)
-    provider: openai
-    model: gpt-5.4
-    apiBase: http://localhost:{PROXY_PORT}
-    apiKey: "dummy"
-    roles:
-      - chat
-
-  # Gemini 3.1 Pro preview
-  - name: Gemini 3.1 Pro Preview (Copilot_proxy)
-    provider: openai
-    model: gemini-3.1-pro-preview
-    apiBase: http://localhost:{PROXY_PORT}
-    apiKey: "dummy"
-    roles:
-      - chat
-
-  # 代码补全 (Tab)
-  - name: Codex Mini (Copilot)
-    provider: openai
-    model: gpt-5.1-codex-mini
-    apiBase: http://localhost:{PROXY_PORT}
-    apiKey: "dummy"
-    roles:
-      - autocomplete
 ```
 
-### 3. 开始使用
+## API
 
-在 VS Code 中打开 Continue 侧边栏，选择模型，开始对话
+- `GET /`：健康检查。
+- `GET /fallback`：当前 fallback 模型。
+- `GET /api/status`：GUI 状态。
+- `GET /api/config`：读取配置。
+- `PUT /api/config`：保存配置，重启后生效。
+- `POST /api/auth/device/start`：开始设备授权。
+- `POST /api/auth/device/poll`：轮询授权结果。
+- `POST /api/auth/logout`：删除 keyring 中的 GitHub token。
 
-## 🔧 高级用法
+## 安全说明
 
-### 修改端口
+长期 GitHub token 不再写入项目目录或 JSON 文件。旧版 `.copilot_token.json` 不会再被 Go 后端读取；确认不需要回滚后可以删除它。
 
-编辑 `main.py` 顶部：
-
-```python
-PROXY_PORT = 15432  # 改成你想要的端口
-```
-
-### 重新授权
-
-删除 token 文件后重新运行：
-
-```bash
-rm .copilot_token.json
-python main.py
-```
-
-### 作为其他工具的后端
-
-任何支持 OpenAI API 格式的工具都可以使用：
-
-```
-API Base: http://localhost:15432
-API Key:  任意值（如 "dummy"）
-Model:    claude-sonnet-4.6
-```
-
-### 模型回退（Model Fallback）
-
-- **作用**：当上游返回 `model_not_supported`（模型对当前账号不可用）时，代理会自动用可用模型重试，避免客户端请求直接失败。
-
-- **工作原理**：代理启动时会调用 `fallback.py` 查询 Copilot 的模型列表并选择一个回退模型（默认优先列表见 `fallback.py`：`gpt-4.1`, `gpt-4o`, `gpt-5-mini`, `raptor-mini`）。当上游返回 400 且错误码为 `model_not_supported` 时，代理会把请求体顶层的 `model` 字段替换为回退模型并重试一次。当前选中的回退模型可通过 `GET /fallback` 查询。
-
-- **自定义**：编辑 `fallback.py` 修改 `PREFERRED_PREFIXES` 或选择逻辑。选择逻辑会优先精确 id 匹配，然后按前缀匹配。
-
-- **查询回退模型**：
-
-```bash
-curl -sS http://localhost:15432/fallback
-```
-
-- **测试**：将客户端指向 `http://localhost:15432` 并请求一个不可用模型（如 `claude-mythos-preview`），在代理日志中会看到回退重试的记录。
-
-## 🏗️ 工作原理
-
-```
-Continue / 其他客户端
-        │
-        │ POST /chat/completions (OpenAI 格式)
-        ▼
-┌─────────────────────┐
-│  copilot_proxy.py   │  localhost:15432
-│                     │
-│  • OAuth 设备流授权  │
-│  • 自动刷新 Token    │
-│  • 请求转发          │
-└─────────────────────┘
-        │
-        │ Bearer <copilot_token>
-        ▼
-GitHub Copilot API
-        │
-        ▼
-Claude / GPT / Gemini
-```
-
-1. **OAuth 授权** - 通过 GitHub 设备流获取 `ghu_` 长期 token
-2. **Token 交换** - 用 `ghu_` token 向 GitHub 换取短期 Copilot token（~30分钟有效）
-3. **自动刷新** - 后台每 25 分钟自动刷新 Copilot token
-4. **请求转发** - 将 OpenAI 格式请求转发到 Copilot API，附带有效的认证信息
-
-## ❓ 常见问题
-
-### Q: Copilot Token 刷新失败？
-
-确认你的 GitHub 账号已开通 Copilot：https://github.com/settings/copilot
-
-### Q: 模型返回 401/403？
-
-可能是 token 过期了，重启脚本即可自动刷新。
-
-### Q: 某些模型不可用？
-
-不同的 Copilot 订阅等级可用的模型不同，免费版可能无法使用所有模型。
-
-### Q: 能在其他电脑上用吗？
-
-每台电脑需要单独运行脚本并授权。不要复制 `.copilot_token.json` 到其他电脑。
-
-### Q: 安全吗？
-
-- Token 仅保存在你本地的 `.copilot_token.json` 文件中
-- 所有请求直接与 GitHub 官方 API 通信
-- 不经过任何第三方服务器
-
-## 📄 License
+## License
 
 MIT

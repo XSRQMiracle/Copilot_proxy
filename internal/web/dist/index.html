@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Copilot Proxy</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="topbar">
+        <div>
+          <h1>Copilot Proxy</h1>
+          <p id="base-url">加载中</p>
+        </div>
+        <div class="status">
+          <span id="github-state" class="pill">GitHub</span>
+          <span id="copilot-state" class="pill">Copilot</span>
+        </div>
+      </section>
+
+      <section class="grid">
+        <article class="panel">
+          <header>
+            <h2>授权</h2>
+            <button id="refresh" type="button">刷新</button>
+          </header>
+          <div class="auth-actions">
+            <button id="start-auth" type="button">开始 GitHub 授权</button>
+            <button id="logout" class="secondary" type="button">退出登录</button>
+          </div>
+          <div id="device-box" class="device hidden">
+            <span>验证码</span>
+            <strong id="device-code"></strong>
+            <a id="device-link" target="_blank" rel="noreferrer">打开 GitHub</a>
+          </div>
+          <p id="auth-message" class="message"></p>
+        </article>
+
+        <article class="panel">
+          <header>
+            <h2>运行状态</h2>
+          </header>
+          <dl class="facts">
+            <div><dt>配置文件</dt><dd id="config-path">-</dd></div>
+            <div><dt>回退模型</dt><dd id="fallback-model">-</dd></div>
+            <div><dt>Token 过期时间</dt><dd id="expires-at">-</dd></div>
+          </dl>
+        </article>
+      </section>
+
+      <section class="panel config-panel">
+        <header>
+          <h2>配置</h2>
+          <button id="save-config" type="button">保存配置</button>
+        </header>
+        <form id="config-form" class="config-grid">
+          <label>监听主机<input name="server.host" /></label>
+          <label>端口<input name="server.port" type="number" min="1" max="65535" /></label>
+          <label>Copilot API<input name="copilot.api_base" /></label>
+          <label>Integration ID<input name="copilot.integration_id" /></label>
+          <label>Keyring Service<input name="keyring.service" /></label>
+          <label>Keyring Account<input name="keyring.account" /></label>
+          <label class="wide">回退模型优先级<input name="fallback.preferred_prefixes" /></label>
+        </form>
+        <p id="config-message" class="message"></p>
+      </section>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

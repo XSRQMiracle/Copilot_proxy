@@ -1,0 +1,35 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 15432,
+    "read_timeout_seconds": 120,
+    "write_timeout_seconds": 120
+  },
+  "github": {
+    "client_id": "Iv1.b507a08c87ecfe98",
+    "device_code_url": "https://github.com/login/device/code",
+    "access_token_url": "https://github.com/login/oauth/access_token",
+    "copilot_token_url": "https://api.github.com/copilot_internal/v2/token",
+    "oauth_scope": "read:user"
+  },
+  "copilot": {
+    "api_base": "https://api.githubcopilot.com",
+    "integration_id": "vscode-chat"
+  },
+  "headers": {
+    "editor_version": "vscode/1.96.0",
+    "editor_plugin_version": "copilot/1.246.0",
+    "user_agent": "GithubCopilot/1.246.0"
+  },
+  "fallback": {
+    "preferred_prefixes": ["gpt-4.1", "gpt-4o", "gpt-5-mini", "raptor-mini"],
+    "required_endpoint": "/chat/completions"
+  },
+  "keyring": {
+    "service": "copilot-proxy",
+    "account": "github-token"
+  },
+  "frontend": {
+    "enabled": true
+  }
+}

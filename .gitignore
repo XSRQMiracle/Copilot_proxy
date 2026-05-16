@@ -8,9 +8,20 @@ venv/
 __pycache__/
 *.pyc
 
+# Go / frontend build cache
+dist/
+bin/
+frontend/node_modules/
+!internal/web/dist/
+!internal/web/dist/**
+
 # config
 pyrightconfig.json
 *.json
+!config.example.json
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/tsconfig.json
 
 # Test Scripts
 test.*

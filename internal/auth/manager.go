@@ -19,6 +19,7 @@ import (
 type Manager struct {
 	cfg          config.Config
 	store        keyring.Store
+	account      config.AccountConfig
 	oauth        OAuthClient
 	httpClient   *http.Client
 	mu           sync.RWMutex
@@ -31,12 +32,19 @@ func NewManager(cfg config.Config, store keyring.Store, httpClient *http.Client)
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
+	account := cfg.ActiveAccount()
 	return &Manager{
 		cfg:        cfg,
 		store:      store,
+		account:    account,
 		oauth:      NewOAuthClient(cfg, httpClient),
 		httpClient: httpClient,
 	}
+}
+
+func NewManagerForActiveAccount(cfg config.Config, httpClient *http.Client) *Manager {
+	account := cfg.ActiveAccount()
+	return NewManager(cfg, keyring.New(account.KeyringService, account.KeyringAccount), httpClient)
 }
 
 func (m *Manager) LoadGitHubToken() error {
@@ -49,6 +57,37 @@ func (m *Manager) LoadGitHubToken() error {
 	}
 	m.mu.Lock()
 	m.githubToken = token
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *Manager) ActiveAccount() config.AccountConfig {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.account
+}
+
+func (m *Manager) GitHubToken() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.githubToken
+}
+
+func (m *Manager) SwitchAccount(account config.AccountConfig) error {
+	account = account.WithDefaults(m.cfg.Keyring)
+	store := keyring.New(account.KeyringService, account.KeyringAccount)
+	token, err := store.Get()
+	if errors.Is(err, keyring.ErrNotFound) {
+		token = ""
+	} else if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	m.account = account
+	m.store = store
+	m.githubToken = token
+	m.copilotToken = ""
+	m.expiresAt = time.Time{}
 	m.mu.Unlock()
 	return nil
 }

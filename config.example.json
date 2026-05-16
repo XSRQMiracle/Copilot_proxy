@@ -31,5 +31,26 @@
   },
   "frontend": {
     "enabled": true
+  },
+  "security": {
+    "api_key": "dummy"
+  },
+  "runtime": {
+    "proxy_disabled": false
+  },
+  "auth": {
+    "active_account_id": "default",
+    "accounts": [
+      {
+        "id": "default",
+        "name": "Default",
+        "keyring_service": "copilot-proxy",
+        "keyring_account": "github-token"
+      }
+    ]
+  },
+  "ui": {
+    "language": "zh",
+    "theme": "system"
   }
 }

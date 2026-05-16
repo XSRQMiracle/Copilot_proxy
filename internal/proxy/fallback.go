@@ -31,6 +31,10 @@ func (s *FallbackSelector) Set(model string) {
 	s.selected = model
 }
 
+func (s *FallbackSelector) UpdateConfig(cfg config.Config) {
+	s.cfg = cfg
+}
+
 func (s *FallbackSelector) Choose(ctx context.Context, modelsURL string, headers map[string]string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, modelsURL, nil)
 	if err != nil {

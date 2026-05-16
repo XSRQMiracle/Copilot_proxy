@@ -14,7 +14,6 @@ import (
 
 	"github.com/Open-Copilot-Proxy/Copilot_Proxy/internal/auth"
 	"github.com/Open-Copilot-Proxy/Copilot_Proxy/internal/config"
-	"github.com/Open-Copilot-Proxy/Copilot_Proxy/internal/keyring"
 	"github.com/Open-Copilot-Proxy/Copilot_Proxy/internal/proxy"
 	"github.com/Open-Copilot-Proxy/Copilot_Proxy/internal/server"
 )
@@ -27,8 +26,8 @@ func main() {
 }
 
 func run(args []string) error {
-	configPath, args := parseConfigPath(args)
-	cfg, resolvedPath, err := config.Load(configPath)
+	opts, args := parseGlobalOptions(args)
+	cfg, resolvedPath, err := config.Load(opts.configPath)
 	if err != nil {
 		return err
 	}
@@ -37,7 +36,7 @@ func run(args []string) error {
 	if len(args) > 0 {
 		switch args[0] {
 		case "serve":
-			return serve(cfg, resolvedPath, logger)
+			return serve(cfg, resolvedPath, logger, !opts.noLogin)
 		case "login":
 			return login(cfg, logger)
 		case "logout":
@@ -51,26 +50,35 @@ func run(args []string) error {
 			return fmt.Errorf("unknown command %q", args[0])
 		}
 	}
-	return serve(cfg, resolvedPath, logger)
+	return serve(cfg, resolvedPath, logger, !opts.noLogin)
 }
 
-func parseConfigPath(args []string) (string, []string) {
+type globalOptions struct {
+	configPath string
+	noLogin    bool
+}
+
+func parseGlobalOptions(args []string) (globalOptions, []string) {
+	var opts globalOptions
 	var filtered []string
 	for i := 0; i < len(args); i++ {
-		if args[i] == "--config" && i+1 < len(args) {
+		switch {
+		case args[i] == "--config" && i+1 < len(args):
 			i++
-			return args[i], append(filtered, args[i+1:]...)
+			opts.configPath = args[i]
+		case args[i] == "--no-login":
+			opts.noLogin = true
+		default:
+			filtered = append(filtered, args[i])
 		}
-		filtered = append(filtered, args[i])
 	}
-	return "", filtered
+	return opts, filtered
 }
 
-func serve(cfg config.Config, configPath string, logger *log.Logger) error {
+func serve(cfg config.Config, configPath string, logger *log.Logger, interactiveLogin bool) error {
 	printBanner()
 	client := &http.Client{Timeout: cfg.HTTPTimeout()}
-	store := keyring.New(cfg.Keyring.Service, cfg.Keyring.Account)
-	authManager := auth.NewManager(cfg, store, client)
+	authManager := auth.NewManagerForActiveAccount(cfg, client)
 	if err := authManager.LoadGitHubToken(); err != nil {
 		return err
 	}
@@ -88,7 +96,7 @@ func serve(cfg config.Config, configPath string, logger *log.Logger) error {
 		}
 	}
 
-	if !authManager.HasGitHubToken() {
+	if !authManager.HasGitHubToken() && interactiveLogin {
 		if err := authManager.InteractiveLogin(ctx, logger.Printf); err != nil {
 			return err
 		}
@@ -96,6 +104,9 @@ func serve(cfg config.Config, configPath string, logger *log.Logger) error {
 			_ = authManager.Logout()
 			return fmt.Errorf("无法获取 Copilot Token: %w", err)
 		}
+	}
+	if !authManager.HasGitHubToken() && !interactiveLogin {
+		logger.Printf("[~] 未发现 GitHub Token，已跳过 CLI 授权流程；请在图形界面完成授权")
 	}
 	authManager.StartRefreshLoop(ctx, 25*time.Minute, logger.Printf)
 
@@ -110,7 +121,8 @@ func serve(cfg config.Config, configPath string, logger *log.Logger) error {
 		}
 	}
 
-	proxyHandler := proxy.NewHandler(cfg, authManager, fallbackSelector, client, logger)
+	stats := proxy.NewStats(500)
+	proxyHandler := proxy.NewHandler(cfg, authManager, fallbackSelector, client, logger, stats)
 	app := server.NewApp(cfg, configPath, authManager, fallbackSelector, proxyHandler, logger)
 	httpServer := app.HTTPServer()
 
@@ -140,7 +152,7 @@ func serve(cfg config.Config, configPath string, logger *log.Logger) error {
 
 func login(cfg config.Config, logger *log.Logger) error {
 	client := &http.Client{Timeout: cfg.HTTPTimeout()}
-	manager := auth.NewManager(cfg, keyring.New(cfg.Keyring.Service, cfg.Keyring.Account), client)
+	manager := auth.NewManagerForActiveAccount(cfg, client)
 	if err := manager.InteractiveLogin(context.Background(), logger.Printf); err != nil {
 		return err
 	}
@@ -148,7 +160,7 @@ func login(cfg config.Config, logger *log.Logger) error {
 }
 
 func logout(cfg config.Config) error {
-	return auth.NewManager(cfg, keyring.New(cfg.Keyring.Service, cfg.Keyring.Account), nil).Logout()
+	return auth.NewManagerForActiveAccount(cfg, nil).Logout()
 }
 
 func configCommand(args []string, cfg config.Config, path string) error {
@@ -166,8 +178,10 @@ func configCommand(args []string, cfg config.Config, path string) error {
 
 func printUsage() {
 	fmt.Println(`Usage:
-  copilot-proxy [--config path]             Start proxy, same as the legacy CLI
-  copilot-proxy [--config path] serve       Start proxy
+  copilot-proxy [--config path]             Start proxy CLI
+  copilot-proxy [--config path] serve       Start proxy CLI
+  copilot-proxy [--config path] --no-login serve
+                                           Start server without blocking for CLI login
   copilot-proxy [--config path] login       Run GitHub device login and store token in system keyring
   copilot-proxy [--config path] logout      Remove token from system keyring
   copilot-proxy [--config path] config show Print effective config

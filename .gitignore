@@ -2,6 +2,7 @@
 .vscode/
 .idea/
 AGENTS.md
+.DS_Store
 
 # Python
 venv/
@@ -11,6 +12,7 @@ __pycache__/
 # Go / frontend build cache
 dist/
 bin/
+.gocache/
 frontend/node_modules/
 !internal/web/dist/
 !internal/web/dist/**

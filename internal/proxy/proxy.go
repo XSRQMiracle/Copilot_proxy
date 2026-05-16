@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/Open-Copilot-Proxy/Copilot_Proxy/internal/auth"
 	"github.com/Open-Copilot-Proxy/Copilot_Proxy/internal/config"
@@ -28,37 +29,65 @@ type Handler struct {
 	fallback *FallbackSelector
 	client   *http.Client
 	logger   *log.Logger
+	stats    *Stats
 }
 
-func NewHandler(cfg config.Config, authManager *auth.Manager, fallback *FallbackSelector, client *http.Client, logger *log.Logger) *Handler {
+func NewHandler(cfg config.Config, authManager *auth.Manager, fallback *FallbackSelector, client *http.Client, logger *log.Logger, stats *Stats) *Handler {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return &Handler{cfg: cfg, auth: authManager, fallback: fallback, client: client, logger: logger}
+	if stats == nil {
+		stats = NewStats(200)
+	}
+	return &Handler{cfg: cfg, auth: authManager, fallback: fallback, client: client, logger: logger, stats: stats}
+}
+
+func (h *Handler) UpdateConfig(cfg config.Config) {
+	h.cfg = cfg
+}
+
+func (h *Handler) Stats() StatsSnapshot {
+	return h.stats.Snapshot()
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	if !h.cfg.Runtime.ProxyDisabled && !h.authorized(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid api key"})
+		h.record(RequestRecord{Time: start, Protocol: "openai", Method: r.Method, Path: r.URL.Path, Status: http.StatusUnauthorized, DurationMs: time.Since(start).Milliseconds(), Error: "invalid api key"})
+		return
+	}
+	if h.cfg.Runtime.ProxyDisabled {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "proxy service is disabled"})
+		h.record(RequestRecord{Time: start, Protocol: "openai", Method: r.Method, Path: r.URL.Path, Status: http.StatusServiceUnavailable, DurationMs: time.Since(start).Milliseconds(), Error: "proxy disabled"})
+		return
+	}
 	token := h.auth.CopilotToken()
 	if token == "" {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Copilot token 未就绪，请检查授权状态"})
+		h.record(RequestRecord{Time: start, Protocol: "openai", Method: r.Method, Path: r.URL.Path, Status: http.StatusServiceUnavailable, DurationMs: time.Since(start).Milliseconds(), Error: "missing copilot token"})
 		return
 	}
 
 	upstreamURL, err := h.upstreamURL(r.URL.Path, r.URL.RawQuery)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		h.record(RequestRecord{Time: start, Protocol: "openai", Method: r.Method, Path: r.URL.Path, Status: http.StatusBadGateway, DurationMs: time.Since(start).Milliseconds(), Error: err.Error()})
 		return
 	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		h.record(RequestRecord{Time: start, Protocol: "openai", Method: r.Method, Path: r.URL.Path, Status: http.StatusBadRequest, DurationMs: time.Since(start).Milliseconds(), Error: err.Error()})
 		return
 	}
 	body = cleanBody(body)
+	model := modelFromJSONBody(body)
 
 	resp, err := h.forward(r.Context(), r.Method, upstreamURL, token, r.Header.Get("Content-Type"), body)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		h.record(RequestRecord{Time: start, Protocol: "openai", Method: r.Method, Path: r.URL.Path, Model: model, Status: http.StatusBadGateway, DurationMs: time.Since(start).Milliseconds(), Error: err.Error()})
 		return
 	}
 	defer resp.Body.Close()
@@ -72,7 +101,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	copyResponse(w, resp)
+	h.copyAndRecordResponse(w, resp, RequestRecord{Time: start, Protocol: "openai", Method: r.Method, Path: r.URL.Path, Model: model, DurationMs: time.Since(start).Milliseconds()})
 }
 
 func (h *Handler) upstreamURL(path string, rawQuery string) (string, error) {
@@ -192,6 +221,81 @@ func copyResponse(w http.ResponseWriter, resp *http.Response) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
+}
+
+func (h *Handler) copyAndRecordResponse(w http.ResponseWriter, resp *http.Response, record RequestRecord) {
+	record.Status = resp.StatusCode
+	if strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
+		copyResponse(w, resp)
+		record.DurationMs = time.Since(record.Time).Milliseconds()
+		h.record(record)
+		return
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		record.Error = err.Error()
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		h.record(record)
+		return
+	}
+	for k, values := range resp.Header {
+		if _, excluded := excludedResponseHeaders[strings.ToLower(k)]; excluded {
+			continue
+		}
+		for _, value := range values {
+			w.Header().Add(k, value)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, _ = w.Write(body)
+	if len(body) > 0 {
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err == nil {
+			if record.Model == "" {
+				record.Model = stringValue(payload["model"])
+			}
+			if usage, ok := payload["usage"].(map[string]any); ok {
+				record.PromptTokens, record.CompletionTokens, record.TotalTokens = tokensFromUsage(usage)
+			}
+		}
+	}
+	record.DurationMs = time.Since(record.Time).Milliseconds()
+	h.record(record)
+}
+
+func (h *Handler) authorized(r *http.Request) bool {
+	expected := strings.TrimSpace(h.cfg.Security.APIKey)
+	if expected == "" {
+		return true
+	}
+	if r.URL.Query().Get("key") == expected {
+		return true
+	}
+	if r.Header.Get("x-api-key") == expected || r.Header.Get("x-goog-api-key") == expected {
+		return true
+	}
+	auth := r.Header.Get("Authorization")
+	if strings.HasPrefix(strings.ToLower(auth), "bearer ") && strings.TrimSpace(auth[7:]) == expected {
+		return true
+	}
+	return false
+}
+
+func (h *Handler) record(record RequestRecord) {
+	if h.stats != nil {
+		h.stats.Record(record)
+	}
+}
+
+func modelFromJSONBody(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return ""
+	}
+	return stringValue(payload["model"])
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

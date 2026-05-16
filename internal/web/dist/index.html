@@ -11,59 +11,152 @@
       <section class="topbar">
         <div>
           <h1>Copilot Proxy</h1>
-          <p id="base-url">加载中</p>
+          <p id="base-url">Loading</p>
         </div>
-        <div class="status">
-          <span id="github-state" class="pill">GitHub</span>
-          <span id="copilot-state" class="pill">Copilot</span>
+        <div class="toolbar">
+          <select id="language-select" aria-label="Language">
+            <option value="zh">中文</option>
+            <option value="en">English</option>
+          </select>
+          <select id="theme-select" aria-label="Theme">
+            <option value="system" data-i18n="theme_system">跟随系统</option>
+            <option value="light" data-i18n="theme_light">浅色</option>
+            <option value="dark" data-i18n="theme_dark">深色</option>
+          </select>
         </div>
       </section>
 
-      <section class="grid">
+      <section class="status-row">
+        <span id="github-state" class="pill">GitHub</span>
+        <span id="copilot-state" class="pill">Copilot</span>
+        <span id="service-state" class="pill">Service</span>
+        <button id="refresh" type="button" data-i18n="refresh">刷新</button>
+      </section>
+
+      <section class="grid two">
         <article class="panel">
           <header>
-            <h2>授权</h2>
-            <button id="refresh" type="button">刷新</button>
+            <h2 data-i18n="auth">授权</h2>
           </header>
-          <div class="auth-actions">
-            <button id="start-auth" type="button">开始 GitHub 授权</button>
-            <button id="logout" class="secondary" type="button">退出登录</button>
+          <div class="row">
+            <select id="account-select"></select>
+            <button id="switch-account" class="secondary" type="button" data-i18n="switch_account">切换账号</button>
+          </div>
+          <div class="row">
+            <input id="new-account-id" data-i18n-placeholder="account_id" placeholder="账号 ID" />
+            <input id="new-account-name" data-i18n-placeholder="account_name" placeholder="显示名称" />
+            <button id="add-account" type="button" data-i18n="add_account">添加账号</button>
+          </div>
+          <div class="row">
+            <button id="start-auth" type="button" data-i18n="start_auth">开始 GitHub 授权</button>
+            <button id="logout" class="secondary" type="button" data-i18n="logout">退出当前账号</button>
           </div>
           <div id="device-box" class="device hidden">
-            <span>验证码</span>
+            <span data-i18n="device_code">验证码</span>
             <strong id="device-code"></strong>
-            <a id="device-link" target="_blank" rel="noreferrer">打开 GitHub</a>
+            <a id="device-link" target="_blank" rel="noreferrer" data-i18n="open_github">打开 GitHub</a>
           </div>
           <p id="auth-message" class="message"></p>
         </article>
 
         <article class="panel">
           <header>
-            <h2>运行状态</h2>
+            <h2 data-i18n="dashboard">仪表盘</h2>
           </header>
+          <div class="metrics">
+            <div><span data-i18n="requests">请求</span><strong id="metric-requests">0</strong></div>
+            <div><span data-i18n="success">成功</span><strong id="metric-success">0</strong></div>
+            <div><span data-i18n="failed">失败</span><strong id="metric-failed">0</strong></div>
+            <div><span data-i18n="tokens">Token</span><strong id="metric-tokens">0</strong></div>
+          </div>
           <dl class="facts">
-            <div><dt>配置文件</dt><dd id="config-path">-</dd></div>
-            <div><dt>回退模型</dt><dd id="fallback-model">-</dd></div>
-            <div><dt>Token 过期时间</dt><dd id="expires-at">-</dd></div>
+            <div><dt data-i18n="config_path">配置文件</dt><dd id="config-path">-</dd></div>
+            <div><dt data-i18n="expires_at">Token 过期</dt><dd id="expires-at">-</dd></div>
+            <div><dt data-i18n="quota">额度</dt><dd id="quota-summary">-</dd></div>
           </dl>
         </article>
       </section>
 
-      <section class="panel config-panel">
+      <section class="panel">
         <header>
-          <h2>配置</h2>
-          <button id="save-config" type="button">保存配置</button>
+          <h2 data-i18n="settings">设置</h2>
+          <button id="save-config" type="button" data-i18n="save">保存配置</button>
         </header>
         <form id="config-form" class="config-grid">
-          <label>监听主机<input name="server.host" /></label>
-          <label>端口<input name="server.port" type="number" min="1" max="65535" /></label>
-          <label>Copilot API<input name="copilot.api_base" /></label>
-          <label>Integration ID<input name="copilot.integration_id" /></label>
-          <label>Keyring Service<input name="keyring.service" /></label>
-          <label>Keyring Account<input name="keyring.account" /></label>
-          <label class="wide">回退模型优先级<input name="fallback.preferred_prefixes" /></label>
+          <label data-i18n-label="service_enabled">
+            <span data-i18n="service_enabled">服务开关</span>
+            <input name="runtime.proxy_enabled" type="checkbox" />
+          </label>
+          <label>
+            <span data-i18n="api_key">API 密钥</span>
+            <input name="security.api_key" />
+          </label>
+          <label>
+            <span data-i18n="host">监听主机</span>
+            <input name="server.host" />
+          </label>
+          <label>
+            <span data-i18n="port">端口</span>
+            <input name="server.port" type="number" min="1" max="65535" />
+          </label>
         </form>
+        <section class="model-picker">
+          <div class="model-title">
+            <h3 data-i18n="fallback_models">回退模型优先级</h3>
+            <button id="load-models" class="secondary" type="button" data-i18n="load_models">加载模型</button>
+          </div>
+          <div id="model-list" class="model-list"></div>
+        </section>
+        <details class="advanced">
+          <summary data-i18n="advanced">高级</summary>
+          <form class="config-grid">
+            <label>
+              <span>Copilot API</span>
+              <input name="copilot.api_base" form="config-form" />
+            </label>
+            <label>
+              <span>Integration ID</span>
+              <input name="copilot.integration_id" form="config-form" />
+            </label>
+            <label>
+              <span>Keyring Service</span>
+              <input name="keyring.service" form="config-form" />
+            </label>
+            <label>
+              <span>Keyring Account</span>
+              <input name="keyring.account" form="config-form" />
+            </label>
+          </form>
+        </details>
         <p id="config-message" class="message"></p>
+      </section>
+
+      <section class="grid two">
+        <article class="panel">
+          <header>
+            <h2 data-i18n="usage_by_model">模型用量</h2>
+          </header>
+          <div id="model-usage" class="usage-list"></div>
+        </article>
+        <article class="panel">
+          <header>
+            <h2 data-i18n="recent_requests">最近请求</h2>
+          </header>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th data-i18n="time">时间</th>
+                  <th data-i18n="protocol">协议</th>
+                  <th data-i18n="model">模型</th>
+                  <th data-i18n="status">状态</th>
+                  <th data-i18n="tokens">Token</th>
+                </tr>
+              </thead>
+              <tbody id="request-table"></tbody>
+            </table>
+          </div>
+        </article>
       </section>
     </main>
     <script type="module" src="./main.js"></script>

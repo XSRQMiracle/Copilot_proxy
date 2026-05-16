@@ -22,6 +22,10 @@ type Config struct {
 	Fallback FallbackConfig `json:"fallback"`
 	Keyring  KeyringConfig  `json:"keyring"`
 	Frontend FrontendConfig `json:"frontend"`
+	Security SecurityConfig `json:"security"`
+	Runtime  RuntimeConfig  `json:"runtime"`
+	Auth     AuthConfig     `json:"auth"`
+	UI       UIConfig       `json:"ui"`
 }
 
 type ServerConfig struct {
@@ -64,6 +68,32 @@ type FrontendConfig struct {
 	Enabled bool `json:"enabled"`
 }
 
+type SecurityConfig struct {
+	APIKey string `json:"api_key"`
+}
+
+type RuntimeConfig struct {
+	ProxyDisabled bool `json:"proxy_disabled"`
+}
+
+type AccountConfig struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	KeyringService  string `json:"keyring_service"`
+	KeyringAccount  string `json:"keyring_account"`
+	GitHubUserLogin string `json:"github_user_login,omitempty"`
+}
+
+type AuthConfig struct {
+	ActiveAccountID string          `json:"active_account_id"`
+	Accounts        []AccountConfig `json:"accounts"`
+}
+
+type UIConfig struct {
+	Language string `json:"language"`
+	Theme    string `json:"theme"`
+}
+
 func Default() Config {
 	return Config{
 		Server: ServerConfig{
@@ -97,6 +127,20 @@ func Default() Config {
 			Account: "github-token",
 		},
 		Frontend: FrontendConfig{Enabled: true},
+		Security: SecurityConfig{APIKey: "dummy"},
+		Runtime:  RuntimeConfig{ProxyDisabled: false},
+		Auth: AuthConfig{
+			ActiveAccountID: "default",
+			Accounts: []AccountConfig{
+				{
+					ID:             "default",
+					Name:           "Default",
+					KeyringService: "copilot-proxy",
+					KeyringAccount: "github-token",
+				},
+			},
+		},
+		UI: UIConfig{Language: "zh", Theme: "system"},
 	}
 }
 
@@ -182,6 +226,40 @@ func (c Config) DefaultHeaders() map[string]string {
 	}
 }
 
+func (c Config) ActiveAccount() AccountConfig {
+	accounts := c.Auth.Accounts
+	for _, account := range accounts {
+		if account.ID == c.Auth.ActiveAccountID {
+			return account.WithDefaults(c.Keyring)
+		}
+	}
+	if len(accounts) > 0 {
+		return accounts[0].WithDefaults(c.Keyring)
+	}
+	return AccountConfig{
+		ID:             "default",
+		Name:           "Default",
+		KeyringService: c.Keyring.Service,
+		KeyringAccount: c.Keyring.Account,
+	}.WithDefaults(c.Keyring)
+}
+
+func (a AccountConfig) WithDefaults(legacy KeyringConfig) AccountConfig {
+	if a.ID == "" {
+		a.ID = "default"
+	}
+	if a.Name == "" {
+		a.Name = a.ID
+	}
+	if a.KeyringService == "" {
+		a.KeyringService = legacy.Service
+	}
+	if a.KeyringAccount == "" {
+		a.KeyringAccount = legacy.Account
+	}
+	return a
+}
+
 func (c *Config) applyDefaults() {
 	d := Default()
 	if c.Server.Host == "" {
@@ -238,6 +316,26 @@ func (c *Config) applyDefaults() {
 	if c.Keyring.Account == "" {
 		c.Keyring.Account = d.Keyring.Account
 	}
+	if c.Security.APIKey == "" {
+		c.Security.APIKey = d.Security.APIKey
+	}
+	// Bool fields cannot distinguish absent vs false in the current config shape.
+	// Preserve explicit false values after a config file exists; only default in Save/creation path.
+	if c.Auth.ActiveAccountID == "" {
+		c.Auth.ActiveAccountID = d.Auth.ActiveAccountID
+	}
+	if len(c.Auth.Accounts) == 0 {
+		c.Auth.Accounts = d.Auth.Accounts
+	}
+	for i := range c.Auth.Accounts {
+		c.Auth.Accounts[i] = c.Auth.Accounts[i].WithDefaults(c.Keyring)
+	}
+	if c.UI.Language == "" {
+		c.UI.Language = d.UI.Language
+	}
+	if c.UI.Theme == "" {
+		c.UI.Theme = d.UI.Theme
+	}
 }
 
 func (c Config) Validate() error {
@@ -252,6 +350,12 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.Keyring.Service) == "" || strings.TrimSpace(c.Keyring.Account) == "" {
 		return errors.New("keyring.service and keyring.account are required")
+	}
+	if c.UI.Language != "" && c.UI.Language != "zh" && c.UI.Language != "en" {
+		return errors.New("ui.language must be zh or en")
+	}
+	if c.UI.Theme != "" && c.UI.Theme != "system" && c.UI.Theme != "light" && c.UI.Theme != "dark" {
+		return errors.New("ui.theme must be system, light, or dark")
 	}
 	return nil
 }

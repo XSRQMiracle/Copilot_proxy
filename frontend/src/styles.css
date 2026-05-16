@@ -1,6 +1,6 @@
 :root {
   color-scheme: light dark;
-  --bg: #f7f8fb;
+  --bg: #f6f7f9;
   --panel: #ffffff;
   --text: #1f2937;
   --muted: #64748b;
@@ -8,11 +8,26 @@
   --accent: #0f766e;
   --accent-strong: #115e59;
   --danger: #b42318;
+  --ok: #15803d;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111827;
+  --panel: #182231;
+  --text: #eef2f7;
+  --muted: #9aa8bc;
+  --line: #2d3a4d;
+  --accent: #2dd4bf;
+  --accent-strong: #5eead4;
+  --danger: #fb7185;
+  --ok: #4ade80;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --bg: #111827;
     --panel: #182231;
     --text: #eef2f7;
@@ -20,6 +35,8 @@
     --line: #2d3a4d;
     --accent: #2dd4bf;
     --accent-strong: #5eead4;
+    --danger: #fb7185;
+    --ok: #4ade80;
   }
 }
 
@@ -34,64 +51,67 @@ body {
 }
 
 .shell {
-  width: min(1120px, calc(100vw - 32px));
+  width: min(1280px, calc(100vw - 32px));
   margin: 0 auto;
-  padding: 32px 0;
+  padding: 28px 0;
 }
 
-.topbar {
+.topbar,
+.status-row,
+.panel header,
+.row,
+.model-title {
   display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topbar,
+.panel header,
+.model-title {
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 24px;
-  margin-bottom: 20px;
+}
+
+.status-row {
+  flex-wrap: wrap;
+  margin-bottom: 16px;
 }
 
 h1,
 h2,
+h3,
 p {
   margin: 0;
 }
 
 h1 {
-  font-size: 32px;
+  font-size: 30px;
   line-height: 1.15;
 }
 
 h2 {
-  font-size: 18px;
+  font-size: 17px;
 }
 
-.topbar p,
-.message,
-dd {
-  color: var(--muted);
+h3 {
+  font-size: 15px;
 }
 
-.status {
+.toolbar {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
 
-.pill {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 6px 10px;
-  font-size: 13px;
-}
-
-.pill.ok {
-  border-color: var(--accent);
-  color: var(--accent-strong);
-}
-
 .grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 16px;
   margin-bottom: 16px;
+}
+
+.grid.two {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
 .panel {
@@ -99,22 +119,25 @@ dd {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 18px;
+  margin-bottom: 16px;
 }
 
 .panel header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
   margin-bottom: 16px;
+}
+
+button,
+select,
+input {
+  min-height: 38px;
+  border-radius: 6px;
+  font: inherit;
 }
 
 button {
   border: 0;
-  border-radius: 6px;
   background: var(--accent);
   color: #ffffff;
-  min-height: 38px;
   padding: 0 14px;
   font-weight: 650;
   cursor: pointer;
@@ -126,17 +149,51 @@ button.secondary {
   border: 1px solid var(--line);
 }
 
-.auth-actions {
-  display: flex;
-  gap: 10px;
+select,
+input {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  padding: 8px 10px;
+}
+
+input[type="checkbox"] {
+  min-height: 20px;
+  width: 20px;
+}
+
+.row {
   flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.row input,
+.row select {
+  flex: 1 1 160px;
+}
+
+.pill {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.pill.ok {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.pill.error {
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .device {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 16px;
+  margin-top: 12px;
   padding: 14px;
   border: 1px dashed var(--line);
   border-radius: 8px;
@@ -155,15 +212,43 @@ button.secondary {
   display: none;
 }
 
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.metrics div,
+.usage-list div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.metrics span,
+.usage-list span,
+.message,
+dd,
+.topbar p {
+  color: var(--muted);
+}
+
+.metrics strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 22px;
+}
+
 .facts {
   margin: 0;
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .facts div {
   display: grid;
-  grid-template-columns: 130px 1fr;
+  grid-template-columns: 120px 1fr;
   gap: 12px;
 }
 
@@ -173,7 +258,7 @@ dt {
 
 dd {
   margin: 0;
-  word-break: break-all;
+  word-break: break-word;
 }
 
 .config-grid {
@@ -190,19 +275,74 @@ label {
   font-weight: 650;
 }
 
-label.wide {
-  grid-column: 1 / -1;
+label input,
+label select {
+  width: 100%;
 }
 
-input {
-  width: 100%;
+.advanced {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.advanced summary {
+  cursor: pointer;
+  font-weight: 750;
+  margin-bottom: 14px;
+}
+
+.model-picker {
+  margin-top: 16px;
+}
+
+.model-list,
+.usage-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.model-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.model-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   border: 1px solid var(--line);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text);
-  min-height: 38px;
-  padding: 8px 10px;
-  font: inherit;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.model-option.disabled {
+  opacity: 0.55;
+}
+
+.model-option span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.table-wrap {
+  overflow: auto;
+  max-height: 360px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th,
+td {
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  padding: 9px 8px;
+  white-space: nowrap;
 }
 
 .message {
@@ -215,18 +355,20 @@ input {
   color: var(--danger);
 }
 
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   .topbar,
-  .grid {
+  .grid.two {
     grid-template-columns: 1fr;
     display: grid;
   }
 
-  .config-grid {
-    grid-template-columns: 1fr;
+  .toolbar {
+    justify-content: flex-start;
   }
 
-  .status {
-    justify-content: flex-start;
+  .config-grid,
+  .model-list,
+  .metrics {
+    grid-template-columns: 1fr;
   }
 }

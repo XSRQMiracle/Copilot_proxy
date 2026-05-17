@@ -57,6 +57,7 @@ export interface QuotaSnapshot {
 
 export interface QuotaResponse {
   available: boolean
+  reason?: string
   message?: string
   snapshots?: Record<string, QuotaSnapshot>
 }

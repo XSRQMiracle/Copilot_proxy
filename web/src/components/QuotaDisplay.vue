@@ -14,7 +14,7 @@
     </div>
 
     <div v-else class="quota-empty">
-      <span>{{ quota?.message || t('quotaDisplay.noQuota') }}</span>
+      <span>{{ displayMessage }}</span>
     </div>
   </div>
 </template>
@@ -35,6 +35,13 @@ const quotaLabelKeys: Record<string, string> = {
 }
 
 const quota = computed(() => appStore.quota)
+
+const displayMessage = computed(() => {
+	const q = quota.value
+	if (!q) return t('quotaDisplay.quotaError')
+	if (q.reason === 'quota_probe_failed') return t('quotaDisplay.quotaError')
+	return q.message || t('quotaDisplay.noQuota')
+})
 
 function snapshotPercent(snapshot: QuotaSnapshot): number {
   if (snapshot.unlimited) return 100

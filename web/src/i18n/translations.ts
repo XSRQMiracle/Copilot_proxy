@@ -109,8 +109,8 @@ export const messages: Record<Language, Record<string, Record<string, string>>> 
       serviceEnabled: '代理服务已开启',
       serviceDisabled: '代理服务已暂停',
       serviceUpdateFail: '服务状态更新失败',
-      configSaved: '配置已保存，正在重启服务…',
-      restartTimeout: '服务重启超时，请手动刷新页面',
+      configSaved: '配置已保存，后端正在重启…',
+      restartTimeout: '服务重启超时，请检查日志',
       configSaveFail: '配置保存失败',
     },
     statusBar: {
@@ -129,6 +129,10 @@ export const messages: Record<Language, Record<string, Record<string, string>>> 
     usageChart: {
       requests: '{count} 次 · {tokens} tok',
       empty: '暂无请求数据 — 代理收到请求后自动显示各模型调用分布',
+    },
+    connectionBanner: {
+      disconnected: 'Disconnected',
+      reconnected: 'Reconnected',
     },
     dashboardView: {
       serviceRunning: '服务运行中',
@@ -282,6 +286,10 @@ export const messages: Record<Language, Record<string, Record<string, string>>> 
     usageChart: {
       requests: '{count} req · {tokens} tok',
       empty: 'No request data — distribution appears after the proxy handles requests',
+    },
+    connectionBanner: {
+      disconnected: 'Disconnected',
+      reconnected: 'Reconnected',
     },
     dashboardView: {
       serviceRunning: 'Service Running',

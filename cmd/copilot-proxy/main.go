@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -32,7 +34,8 @@ func run(args []string) error {
 
 	cfg, resolvedPath, err := config.LoadWithDecryptedTokens(opts.configPath)
 	if err != nil {
-		return err
+		// 解密警告是非致命的：WebUI 仍可启动，用户可重刷 token 或重新授权
+		fmt.Fprintln(os.Stderr, "[!]", err)
 	}
 	logger := log.New(os.Stdout, "", 0)
 
@@ -78,8 +81,23 @@ func parseGlobalOptions(args []string) (globalOptions, []string) {
 func serve(cfg config.Config, configPath string, logger *log.Logger) error {
 	printBanner()
 
-	client := &http.Client{Timeout: cfg.HTTPTimeout()}
+	transport := &http.Transport{
+		// 关闭 HTTP/2 以避免 Clash TUN 模式下返回空响应 (EOF)。
+		// 许多代理/TUN 工具对 HTTP/2 支持不完整且无法回退到 HTTP/1.1，
+		// 导致 Go 收到空响应体。
+		TLSNextProto: make(map[string]func(authority string, c *tls.Conn) http.RoundTripper),
+	}
+	client := &http.Client{
+		Timeout:   cfg.HTTPTimeout(),
+		Transport: transport,
+	}
 	authManager := auth.NewManager(&cfg, configPath, client)
+
+	logger.Printf("[~] 已加载 %d 个账号, activeID=%q, hasGitHubToken=%v, hasCopilotToken=%v",
+		len(cfg.Auth.Accounts),
+		authManager.ActiveAccountID(),
+		authManager.HasGitHubToken(),
+		authManager.HasCopilotToken())
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -87,11 +105,16 @@ func serve(cfg config.Config, configPath string, logger *log.Logger) error {
 	if authManager.HasGitHubToken() {
 		logger.Println("[~] Found saved GitHub token, verifying...")
 		if err := authManager.RefreshCopilotToken(ctx); err != nil {
-			logger.Printf("[!] Token invalid or cannot exchange for Copilot token: %v", err)
-			_ = authManager.RemoveAccount(ctx, authManager.ActiveAccountID())
+			logger.Printf("[!] Token refresh failed: %v", err)
+			logger.Println("[~] Use WebUI to re-authorize if the token has expired")
 		} else {
 			logger.Println("[+] Copilot token refreshed successfully")
 		}
+	}
+
+	if !cfg.HasAdminPassword() {
+		logger.Println("[!] No admin password configured — WebUI and API are accessible to anyone on the LAN")
+		logger.Printf("[~] Set security.admin_password in %s or via the WebUI settings page", configPath)
 	}
 
 	if !authManager.HasCopilotToken() {
@@ -118,10 +141,19 @@ func serve(cfg config.Config, configPath string, logger *log.Logger) error {
 	app := server.NewApp(&cfg, configPath, authManager, fallbackSelector, proxyHandler, logger, restartCh)
 	httpServer := app.HTTPServer()
 
+	lanURL := ""
+	if host := cfg.Server.Host; host == "" || host == "0.0.0.0" || host == "127.0.0.1" || host == "::" {
+		if lanIP := lanIP(); lanIP != "" {
+			lanURL = fmt.Sprintf("http://%s/ui/", net.JoinHostPort(lanIP, strconv.Itoa(cfg.Server.Port)))
+		}
+	}
 	logger.Printf("")
 	logger.Printf("  Copilot Proxy started!")
 	logger.Printf("  API:      %s", cfg.PublicBaseURL())
 	logger.Printf("  WebUI:    %s/ui/", cfg.PublicBaseURL())
+	if lanURL != "" {
+		logger.Printf("  LAN:      %s", lanURL)
+	}
 	logger.Printf("  Config:   %s", configPath)
 	logger.Printf("  Ctrl+C to stop")
 	logger.Printf("")
@@ -134,15 +166,6 @@ func serve(cfg config.Config, configPath string, logger *log.Logger) error {
 		defer cancel()
 		_ = httpServer.Shutdown(shutdownCtx)
 	}()
-
-	if os.Getenv("COPILOT_PROXY_RESTARTING") != "1" && authManager.HasCopilotToken() {
-		go func() {
-			time.Sleep(500 * time.Millisecond)
-			if err := auth.OpenBrowser(cfg.PublicBaseURL() + "/ui/"); err != nil {
-				logger.Printf("[~] %v", err)
-			}
-		}()
-	}
 
 	// Retry listener to handle brief TIME_WAIT / orphan process on restart
 	var ln net.Listener
@@ -265,6 +288,9 @@ func logout(cfg config.Config, configPath string, logger *log.Logger) error {
 
 func configCommand(args []string, cfg config.Config, path string) error {
 	if len(args) == 0 || args[0] == "show" {
+		for i := range cfg.Auth.Accounts {
+			cfg.Auth.Accounts[i].GitHubToken = ""
+		}
 		raw, _ := json.MarshalIndent(cfg, "", "  ")
 		fmt.Println(string(raw))
 		return nil
@@ -300,6 +326,55 @@ func printBanner() {
  | |   / _ \| '_ \| | |/ _ \| __| | |_) | '__/ _ \ \/ / | | |
  | |__| (_) | |_) | | | (_) | |_  |  __/| | | (_) >  <| |_| |
   \____\___/| .__/|_|_|\___/ \__| |_|   |_|  \___/_/\_\\__, |
-            |_|                                         |___/
+             |_|                                         |___/
 `)
+}
+
+func lanIP() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		name := strings.ToLower(iface.Name)
+		if strings.Contains(name, "tailscale") ||
+			strings.Contains(name, "docker") ||
+			strings.Contains(name, "hyper-v") ||
+			strings.Contains(name, "vmware") ||
+			strings.Contains(name, "virtualbox") ||
+			strings.Contains(name, "vbox") ||
+			strings.Contains(name, "meta") ||
+			strings.Contains(name, "utun") {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipnet, ok := addr.(*net.IPNet)
+			if !ok || ipnet.IP.IsLoopback() || ipnet.IP.To4() == nil {
+				continue
+			}
+			if ipnet.IP[0] == 169 && ipnet.IP[1] == 254 {
+				continue
+			}
+			return ipnet.IP.String()
+		}
+	}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, addr := range addrs {
+		ipnet, ok := addr.(*net.IPNet)
+		if !ok || ipnet.IP.IsLoopback() || ipnet.IP.To4() == nil {
+			continue
+		}
+		return ipnet.IP.String()
+	}
+	return ""
 }

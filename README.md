@@ -152,9 +152,13 @@ A template is available at `config.example.json`
 
 ### WebUI access control
 
-If `security.admin_password` is set, the WebUI requires login at `/ui/`
+By default, the WebUI is protected with password `admin` (set in `security.admin_password`)
+Change it to a secure password in `config.json` or via the WebUI settings page
 The password is hashed and stored in the config file
 If no password is set, the WebUI is open to anyone on the local network — set this for production use
+
+> **Security note**: The default password `admin` is provided for convenience.
+> Change it immediately if the proxy is exposed to untrusted networks.
 
 ## Compatible APIs
 

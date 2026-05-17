@@ -111,8 +111,10 @@ func readMacIOPlatformUUID() string {
 	return host
 }
 
-// encryptToken 用 AES-GCM 加密明文，返回 base64 编码的密文。
-func encryptToken(plaintext string) (string, error) {
+const encryptedPrefix = "enc:v1:"
+
+// EncryptToken 用 AES-GCM 加密明文，返回带 enc:v1: 前缀的 base64 编码密文。
+func EncryptToken(plaintext string) (string, error) {
 	if plaintext == "" {
 		return "", errors.New("cannot encrypt empty token")
 	}
@@ -130,16 +132,22 @@ func encryptToken(plaintext string) (string, error) {
 		return "", fmt.Errorf("rand nonce: %w", err)
 	}
 	ciphertext := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
-	return base64.StdEncoding.EncodeToString(ciphertext), nil
+	encoded := base64.StdEncoding.EncodeToString(ciphertext)
+	return encryptedPrefix + encoded, nil
 }
 
-// decryptToken 解密 base64 编码的 AES-GCM 密文。
+// DecryptToken 解密 enc:v1: 前缀或传统 base64 编码的 AES-GCM 密文。
 // 如果密钥不匹配（机器指纹变化），返回明确的错误。
-func decryptToken(encoded string) (string, error) {
+func DecryptToken(encoded string) (string, error) {
 	if encoded == "" {
 		return "", errors.New("cannot decrypt empty token")
 	}
-	data, err := base64.StdEncoding.DecodeString(encoded)
+	// 剥离 enc:v1: 前缀（新格式）；传统格式无前缀直接 base64 解码
+	payload := encoded
+	if strings.HasPrefix(encoded, encryptedPrefix) {
+		payload = strings.TrimPrefix(encoded, encryptedPrefix)
+	}
+	data, err := base64.StdEncoding.DecodeString(payload)
 	if err != nil {
 		return "", fmt.Errorf("base64 decode: %w", err)
 	}
@@ -164,7 +172,21 @@ func decryptToken(encoded string) (string, error) {
 	return string(plaintext), nil
 }
 
-// isProbablyEncrypted 快速判断字符串是否看起来是加密的（base64 格式且满足最小长度）。
-func isProbablyEncrypted(s string) bool {
-	return len(s) > 40 && strings.TrimSpace(s) == s && !strings.ContainsAny(s, " \t\n")
+// IsProbablyEncrypted 判断字符串是否已加密。
+// 新版加密使用显式 enc:v1: 前缀；老版加密使用无前缀 base64（通过解码+最小长度校验避免误判）。 
+func IsProbablyEncrypted(s string) bool {
+	// 显式前缀：新格式
+	if strings.HasPrefix(s, encryptedPrefix) {
+		return true
+	}
+	// 长明文 PAT（无前缀 base64）也可能触发启发式；通过 base64 解码验证排除误判
+	if len(s) > 40 && strings.TrimSpace(s) == s && !strings.ContainsAny(s, " \t\n") {
+		decoded, err := base64.StdEncoding.DecodeString(s)
+		if err != nil {
+			return false
+		}
+		// AES-GCM 至少 12 字节 nonce + 1 字节密文
+		return len(decoded) >= 13
+	}
+	return false
 }

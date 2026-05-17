@@ -112,7 +112,8 @@ func Default() Config {
 			RequiredEndpoint:  "/chat/completions",
 		},
 		Security: SecurityConfig{
-			APIKey: "dummy",
+			APIKey:          "dummy",
+			AdminPassword:   "admin",
 		},
 		Runtime: RuntimeConfig{ProxyDisabled: false},
 		Auth: AuthConfig{
@@ -182,8 +183,8 @@ func Save(path string, cfg Config) error {
 	encrypted := cfg
 	for i := range encrypted.Auth.Accounts {
 		token := encrypted.Auth.Accounts[i].GitHubToken
-		if token != "" && !isProbablyEncrypted(token) {
-			ciphertext, err := encryptToken(token)
+		if token != "" && !IsProbablyEncrypted(token) {
+			ciphertext, err := EncryptToken(token)
 			if err != nil {
 				return fmt.Errorf("encrypt token for account %s: %w", encrypted.Auth.Accounts[i].ID, err)
 			}
@@ -199,7 +200,7 @@ func Save(path string, cfg Config) error {
 }
 
 // LoadWithDecryptedTokens 加载配置并解密所有 github_token。
-// 这是 auth 模块应该调用的方法。
+// 解密失败的 token 会被清空（而非继续以密文体作为凭据使用），并通过错误返回汇总警告。
 func LoadWithDecryptedTokens(path string) (Config, string, error) {
 	cfg, resolved, err := Load(path)
 	if err != nil {
@@ -216,20 +217,28 @@ func LoadWithDecryptedTokens(path string) (Config, string, error) {
 	if err := json.Unmarshal(raw, &rawCfg); err != nil {
 		return cfg, resolved, err
 	}
+
+	var decryptErrs []error
 	for i := range rawCfg.Auth.Accounts {
 		token := rawCfg.Auth.Accounts[i].GitHubToken
-		if token != "" && isProbablyEncrypted(token) {
-			plaintext, err := decryptToken(token)
+		if token != "" && IsProbablyEncrypted(token) {
+			plaintext, err := DecryptToken(token)
 			if err != nil {
-				// 解密失败：token 可能在本机之外加密，不清除原有值，保留错误信息
-				cfg.Auth.Accounts[i].GitHubToken = token
-				_ = fmt.Errorf("decrypt token for %s: %w (machine changed?)", rawCfg.Auth.Accounts[i].ID, err)
+				// 解密失败：不清除现有配置，仅把内存中的 token 置空；
+				// 绝不保留密文字符串作为后续鉴权的凭据。
+				cfg.Auth.Accounts[i].GitHubToken = ""
+				decryptErrs = append(decryptErrs, fmt.Errorf("account %q: %w", rawCfg.Auth.Accounts[i].ID, err))
 				continue
 			}
 			cfg.Auth.Accounts[i].GitHubToken = plaintext
 		} else {
 			cfg.Auth.Accounts[i].GitHubToken = token
 		}
+	}
+
+	if len(decryptErrs) > 0 {
+		return cfg, resolved, fmt.Errorf("the following accounts had token decryption failures and were cleared: %s",
+			errors.Join(decryptErrs...))
 	}
 	return cfg, resolved, nil
 }

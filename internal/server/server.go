@@ -76,6 +76,8 @@ func (a *App) route(w http.ResponseWriter, r *http.Request) {
 		a.api(w, r)
 	case r.URL.Path == "/fallback" && r.Method == http.MethodGet:
 		writeJSON(w, http.StatusOK, map[string]string{"fallback_model": a.fallback.Selected()})
+	case r.URL.Path == "/favicon.ico":
+		a.serveFavicon(w, r)
 	case strings.HasPrefix(r.URL.Path, "/ui") || r.URL.Path == "/ui":
 		a.serveFrontend(w, r)
 	default:
@@ -193,7 +195,16 @@ func (a *App) status(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) getConfig(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, a.cfg)
+	writeJSON(w, http.StatusOK, redactConfigSecrets(*a.cfg))
+}
+
+// redactConfigSecrets 返回配置的深拷贝，清除所有账号的 GitHubToken，
+// 避免明文凭据通过 API 泄漏。
+func redactConfigSecrets(cfg config.Config) config.Config {
+	for i := range cfg.Auth.Accounts {
+		cfg.Auth.Accounts[i].GitHubToken = ""
+	}
+	return cfg
 }
 
 func (a *App) triggerRestart() {
@@ -211,6 +222,24 @@ func (a *App) updateConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+
+	// Preserve existing non-empty tokens when the incoming payload has empty tokens.
+	// The GET /api/config endpoint redacts tokens for security, so the settings form
+	// always submits empty token values. Without this guard, saving settings would
+	// permanently wipe the encrypted token from disk.
+	for i := range next.Auth.Accounts {
+		if next.Auth.Accounts[i].GitHubToken == "" {
+			for j := range a.cfg.Auth.Accounts {
+				if a.cfg.Auth.Accounts[j].ID == next.Auth.Accounts[i].ID {
+					if a.cfg.Auth.Accounts[j].GitHubToken != "" {
+						next.Auth.Accounts[i].GitHubToken = a.cfg.Auth.Accounts[j].GitHubToken
+					}
+					break
+				}
+			}
+		}
+	}
+
 	if err := config.Save(a.configPath, next); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -320,7 +349,9 @@ func (a *App) addAccount(w http.ResponseWriter, r *http.Request) {
 	if err := a.auth.RefreshCopilotToken(r.Context()); err != nil {
 		a.logger.Printf("[!] Copilot Token 刷新失败: %v", err)
 	}
-	writeJSON(w, http.StatusOK, account)
+	safe := *account
+	safe.GitHubToken = ""
+	writeJSON(w, http.StatusOK, safe)
 }
 
 func (a *App) switchAccount(w http.ResponseWriter, r *http.Request) {
@@ -498,7 +529,11 @@ func modelAvailable(model map[string]any, requiredEndpoint string) bool {
 func (a *App) quota(w http.ResponseWriter, r *http.Request) {
 	token := a.auth.GitHubToken()
 	if token == "" {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"available": false, "message": "GitHub token not ready"})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"available": false,
+			"reason":    "quota_probe_failed",
+			"message":   "GitHub token not ready",
+		})
 		return
 	}
 	endpoints := []string{
@@ -532,13 +567,15 @@ func (a *App) quota(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if quota != nil {
+		quota["reason"] = "quota_ok"
 		quota["probes"] = results
 		writeJSON(w, http.StatusOK, quota)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"available": false,
-		"message":   "GitHub does not expose a stable public personal Copilot remaining-quota endpoint; these are best-effort probe results.",
+		"reason":    "quota_probe_failed",
+		"message":   "Unable to determine quota from GitHub probe endpoints. This is expected for some accounts and is not an error.",
 		"probes":    results,
 	})
 }
@@ -631,6 +668,18 @@ func (a *App) serveFrontend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.ServeFileFS(w, r, dist, name)
+}
+
+func (a *App) serveFavicon(w http.ResponseWriter, r *http.Request) {
+	data, err := web.Favicon()
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "max-age=86400, public")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

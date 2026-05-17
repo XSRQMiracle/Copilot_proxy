@@ -111,37 +111,16 @@ async function updateService(enabled: boolean) {
   }
 }
 
-async function waitForServer(): Promise<boolean> {
-  const maxAttempts = 30
-  for (let i = 0; i < maxAttempts; i++) {
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    try {
-      const res = await fetch('/')
-      if (res.ok) return true
-    } catch {
-      // Server still restarting
-    }
-  }
-  return false
-}
-
 async function saveConfig() {
   if (!form.value) return
   saving.value = true
   try {
     form.value.runtime.proxy_disabled = !serviceOn.value
-    const saved = await configApi.save(form.value)
+    await configApi.save(form.value)
     const next = cloneConfig(form.value)
     appStore.setConfig(next)
     message.success(t('settingsForm.configSaved'))
-
-    await new Promise(resolve => setTimeout(resolve, 500))
-    const ok = await waitForServer()
-    if (ok) {
-      window.location.reload()
-    } else {
-      message.warning(t('settingsForm.restartTimeout'))
-    }
+    emit('saved')
   } catch (err) {
     message.error(err instanceof Error ? err.message : t('settingsForm.configSaveFail'))
   } finally {

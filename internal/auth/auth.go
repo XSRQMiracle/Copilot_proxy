@@ -100,27 +100,37 @@ func (m *Manager) Expiration() time.Time {
 }
 
 func (m *Manager) SwitchAccount(ctx context.Context, id string) error {
-	m.mu.Lock()
+	// Find the new account and get its token WITHOUT changing activeID
+	m.mu.RLock()
+	var newToken string
 	found := false
 	for i := range m.cfg.Auth.Accounts {
 		if m.cfg.Auth.Accounts[i].ID == id {
-			m.activeID = id
-			m.cfg.Auth.ActiveAccountID = id
+			newToken = m.cfg.Auth.Accounts[i].GitHubToken
 			found = true
 			break
 		}
 	}
-	m.mu.Unlock()
+	m.mu.RUnlock()
 
 	if !found {
 		return fmt.Errorf("account %q not found", id)
 	}
 
-	if m.HasGitHubToken() {
-		if err := m.RefreshCopilotToken(ctx); err != nil {
+	// Refresh the Copilot token with the new account's GitHub token FIRST.
+	// Only commit the switch if the token refresh succeeds.
+	if newToken != "" {
+		if err := m.refreshCopilotTokenWith(ctx, newToken); err != nil {
 			return fmt.Errorf("refresh copilot token after switch: %w", err)
 		}
 	}
+
+	// Commit switch — token refresh already succeeded (or no token needed)
+	m.mu.Lock()
+	m.activeID = id
+	m.cfg.Auth.ActiveAccountID = id
+	m.mu.Unlock()
+
 	return config.Save(m.configPath, *m.cfg)
 }
 
@@ -212,6 +222,17 @@ func (m *Manager) RefreshCopilotToken(ctx context.Context) error {
 	if githubToken == "" {
 		return errors.New("github token is not available")
 	}
+	return m.refreshCopilotTokenWith(ctx, githubToken)
+}
+
+// refreshCopilotTokenWith 使用指定的 GitHub Token 刷新 Copilot Token。
+// 刷新前清空旧 token，刷新成功才设置新值，失败则保持清空状态。
+func (m *Manager) refreshCopilotTokenWith(ctx context.Context, githubToken string) error {
+	// 清空旧 token，避免失败后保留过期凭据
+	m.mu.Lock()
+	m.copilotToken = ""
+	m.expiresAt = time.Time{}
+	m.mu.Unlock()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.cfg.GitHub.CopilotTokenURL, nil)
 	if err != nil {
@@ -220,7 +241,7 @@ func (m *Manager) RefreshCopilotToken(ctx context.Context) error {
 	for k, v := range m.cfg.DefaultHeaders() {
 		req.Header.Set(k, v)
 	}
-	req.Header.Set("Authorization", "token "+githubToken)
+	req.Header.Set("Authorization", "Bearer "+githubToken)
 
 	resp, err := m.httpClient.Do(req)
 	if err != nil {
@@ -238,7 +259,7 @@ func (m *Manager) RefreshCopilotToken(ctx context.Context) error {
 	}
 	if payload.Token == "" {
 		if payload.Message != "" {
-			return errors.New(payload.Message)
+			return fmt.Errorf("copilot token request failed with status %d: %s", resp.StatusCode, payload.Message)
 		}
 		return fmt.Errorf("copilot token request failed with status %d", resp.StatusCode)
 	}

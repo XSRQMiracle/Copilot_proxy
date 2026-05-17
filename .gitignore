@@ -20,12 +20,7 @@ web/node_modules/
 web/dist/
 
 # config
-*.json
-!config.example.json
-!web/package.json
-!web/package-lock.json
-!web/tsconfig.json
+config.json
 
 # test scripts
 test*
-getmodels.py

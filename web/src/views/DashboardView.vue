@@ -1,5 +1,6 @@
 <template>
   <main class="dashboard-shell">
+    <ConnectionBanner :connected="connected" />
     <StatusBar />
 
     <header class="dashboard-hero">
@@ -101,6 +102,7 @@ import { useMessage } from 'naive-ui'
 import { configApi, quotaApi, statsApi, statusApi } from '../api'
 import { useI18n } from '../i18n'
 import { useAppStore } from '../stores/app'
+import ConnectionBanner from '../components/ConnectionBanner.vue'
 import StatusBar from '../components/StatusBar.vue'
 import AccountPanel from '../components/AccountPanel.vue'
 import DeviceAuth from '../components/DeviceAuth.vue'
@@ -118,8 +120,10 @@ const { t } = useI18n()
 const refreshing = ref(false)
 const loadError = ref('')
 const showDeviceAuth = ref(false)
+const connected = ref(true)
 const accountPanelRef = ref<{ refresh: () => Promise<void> } | null>(null)
 let statsTimer: number | undefined
+let pingTimer: number | undefined
 
 async function refreshStats() {
   appStore.stats = await statsApi.get()
@@ -153,6 +157,20 @@ async function refreshAll() {
   }
 }
 
+async function ping() {
+  try {
+    const res = await fetch('/')
+    connected.value = res.ok
+  } catch {
+    connected.value = false
+  }
+}
+
+function startPing() {
+  ping()
+  pingTimer = window.setInterval(ping, 3000)
+}
+
 async function handleAuthorized() {
   message.success(t('dashboardView.authComplete'))
   await accountPanelRef.value?.refresh()
@@ -164,10 +182,12 @@ onMounted(async () => {
   statsTimer = window.setInterval(() => {
     refreshStats().catch(() => {})
   }, 5000)
+  startPing()
 })
 
 onUnmounted(() => {
   if (statsTimer) window.clearInterval(statsTimer)
+  if (pingTimer) window.clearInterval(pingTimer)
 })
 </script>
 

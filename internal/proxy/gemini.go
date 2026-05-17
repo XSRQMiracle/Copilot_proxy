@@ -283,10 +283,6 @@ func (h *Handler) serveGeminiStream(w http.ResponseWriter, r *http.Request, toke
 		delta, _ := choice["delta"].(map[string]any)
 		candidate := map[string]any{
 			"index": 0,
-			"content": map[string]any{
-				"role":  "model",
-				"parts": []map[string]any{},
-			},
 		}
 		if text := stringValue(delta["content"]); text != "" {
 			candidate["content"] = map[string]any{"role": "model", "parts": []map[string]any{{"text": text}}}

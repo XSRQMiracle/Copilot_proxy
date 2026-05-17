@@ -1,8 +1,8 @@
 # ide
 .vscode/
 .idea/
-AGENTS.md
 .DS_Store
+AGENTS.md
 
 # go
 bin/
@@ -11,23 +11,20 @@ vendor/
 
 # build
 *.exe
+internal/web/dist/
+copilot-proxy
+copilot-proxy.exe
 
 # node
-frontend/node_modules/
-dist/
-!internal/web/dist/
-!internal/web/dist/**
+web/node_modules/
+web/dist/
 
 # config
 *.json
 !config.example.json
-!frontend/package.json
-!frontend/package-lock.json
-!frontend/tsconfig.json
-
-# python
-venv/
-__pycache__/
+!web/package.json
+!web/package-lock.json
+!web/tsconfig.json
 
 # test scripts
 test*

@@ -25,29 +25,16 @@
     "preferred_prefixes": ["gpt-4.1", "gpt-4o", "gpt-5-mini", "raptor-mini"],
     "required_endpoint": "/chat/completions"
   },
-  "keyring": {
-    "service": "copilot-proxy",
-    "account": "github-token"
-  },
-  "frontend": {
-    "enabled": true
-  },
   "security": {
-    "api_key": "dummy"
+    "api_key": "dummy",
+    "admin_password": "admin"
   },
   "runtime": {
     "proxy_disabled": false
   },
   "auth": {
-    "active_account_id": "default",
-    "accounts": [
-      {
-        "id": "default",
-        "name": "Default",
-        "keyring_service": "copilot-proxy",
-        "keyring_account": "github-token"
-      }
-    ]
+    "active_account_id": "",
+    "accounts": []
   },
   "ui": {
     "language": "zh",

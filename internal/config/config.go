@@ -20,8 +20,6 @@ type Config struct {
 	Copilot  CopilotConfig  `json:"copilot"`
 	Headers  HeaderConfig   `json:"headers"`
 	Fallback FallbackConfig `json:"fallback"`
-	Keyring  KeyringConfig  `json:"keyring"`
-	Frontend FrontendConfig `json:"frontend"`
 	Security SecurityConfig `json:"security"`
 	Runtime  RuntimeConfig  `json:"runtime"`
 	Auth     AuthConfig     `json:"auth"`
@@ -59,17 +57,9 @@ type FallbackConfig struct {
 	RequiredEndpoint  string   `json:"required_endpoint"`
 }
 
-type KeyringConfig struct {
-	Service string `json:"service"`
-	Account string `json:"account"`
-}
-
-type FrontendConfig struct {
-	Enabled bool `json:"enabled"`
-}
-
 type SecurityConfig struct {
-	APIKey string `json:"api_key"`
+	APIKey        string `json:"api_key"`
+	AdminPassword string `json:"admin_password,omitempty"`
 }
 
 type RuntimeConfig struct {
@@ -79,9 +69,8 @@ type RuntimeConfig struct {
 type AccountConfig struct {
 	ID              string `json:"id"`
 	Name            string `json:"name"`
-	KeyringService  string `json:"keyring_service"`
-	KeyringAccount  string `json:"keyring_account"`
 	GitHubUserLogin string `json:"github_user_login,omitempty"`
+	GitHubToken     string `json:"github_token,omitempty"`
 }
 
 type AuthConfig struct {
@@ -122,37 +111,34 @@ func Default() Config {
 			PreferredPrefixes: []string{"gpt-4.1", "gpt-4o", "gpt-5-mini", "raptor-mini"},
 			RequiredEndpoint:  "/chat/completions",
 		},
-		Keyring: KeyringConfig{
-			Service: "copilot-proxy",
-			Account: "github-token",
+		Security: SecurityConfig{
+			APIKey: "dummy",
 		},
-		Frontend: FrontendConfig{Enabled: true},
-		Security: SecurityConfig{APIKey: "dummy"},
-		Runtime:  RuntimeConfig{ProxyDisabled: false},
+		Runtime: RuntimeConfig{ProxyDisabled: false},
 		Auth: AuthConfig{
-			ActiveAccountID: "default",
-			Accounts: []AccountConfig{
-				{
-					ID:             "default",
-					Name:           "Default",
-					KeyringService: "copilot-proxy",
-					KeyringAccount: "github-token",
-				},
-			},
+			ActiveAccountID: "",
+			Accounts:        []AccountConfig{},
 		},
 		UI: UIConfig{Language: "zh", Theme: "system"},
 	}
 }
 
+// DefaultPath 返回默认配置文件路径（可执行程序所在目录下的 config/config.json）。
 func DefaultPath() (string, error) {
 	if fromEnv := strings.TrimSpace(os.Getenv(EnvConfigPath)); fromEnv != "" {
 		return fromEnv, nil
 	}
-	dir, err := os.UserConfigDir()
+	exe, err := os.Executable()
 	if err != nil {
-		return "", err
+		// 兜底：当前工作目录
+		dir, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(dir, "config", "config.json"), nil
 	}
-	return filepath.Join(dir, "copilot-proxy", "config.json"), nil
+	dir := filepath.Dir(exe)
+	return filepath.Join(dir, "config", "config.json"), nil
 }
 
 func Load(path string) (Config, string, error) {
@@ -191,11 +177,61 @@ func Save(path string, cfg Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	raw, err := json.MarshalIndent(cfg, "", "  ")
+
+	// 加密所有账号的 github_token
+	encrypted := cfg
+	for i := range encrypted.Auth.Accounts {
+		token := encrypted.Auth.Accounts[i].GitHubToken
+		if token != "" && !isProbablyEncrypted(token) {
+			ciphertext, err := encryptToken(token)
+			if err != nil {
+				return fmt.Errorf("encrypt token for account %s: %w", encrypted.Auth.Accounts[i].ID, err)
+			}
+			encrypted.Auth.Accounts[i].GitHubToken = ciphertext
+		}
+	}
+
+	raw, err := json.MarshalIndent(encrypted, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, append(raw, '\n'), 0o600)
+}
+
+// LoadWithDecryptedTokens 加载配置并解密所有 github_token。
+// 这是 auth 模块应该调用的方法。
+func LoadWithDecryptedTokens(path string) (Config, string, error) {
+	cfg, resolved, err := Load(path)
+	if err != nil {
+		return cfg, resolved, err
+	}
+
+	// Reload raw to decrypt tokens
+	raw, err := os.ReadFile(resolved)
+	if err != nil {
+		return cfg, resolved, err
+	}
+	// 从原始 JSON 解密 token
+	var rawCfg Config
+	if err := json.Unmarshal(raw, &rawCfg); err != nil {
+		return cfg, resolved, err
+	}
+	for i := range rawCfg.Auth.Accounts {
+		token := rawCfg.Auth.Accounts[i].GitHubToken
+		if token != "" && isProbablyEncrypted(token) {
+			plaintext, err := decryptToken(token)
+			if err != nil {
+				// 解密失败：token 可能在本机之外加密，不清除原有值，保留错误信息
+				cfg.Auth.Accounts[i].GitHubToken = token
+				_ = fmt.Errorf("decrypt token for %s: %w (machine changed?)", rawCfg.Auth.Accounts[i].ID, err)
+				continue
+			}
+			cfg.Auth.Accounts[i].GitHubToken = plaintext
+		} else {
+			cfg.Auth.Accounts[i].GitHubToken = token
+		}
+	}
+	return cfg, resolved, nil
 }
 
 func (c Config) PublicBaseURL() string {
@@ -226,38 +262,21 @@ func (c Config) DefaultHeaders() map[string]string {
 	}
 }
 
-func (c Config) ActiveAccount() AccountConfig {
+func (c Config) ActiveAccount() *AccountConfig {
 	accounts := c.Auth.Accounts
-	for _, account := range accounts {
-		if account.ID == c.Auth.ActiveAccountID {
-			return account.WithDefaults(c.Keyring)
+	for i := range accounts {
+		if accounts[i].ID == c.Auth.ActiveAccountID {
+			return &accounts[i]
 		}
 	}
 	if len(accounts) > 0 {
-		return accounts[0].WithDefaults(c.Keyring)
+		return &accounts[0]
 	}
-	return AccountConfig{
-		ID:             "default",
-		Name:           "Default",
-		KeyringService: c.Keyring.Service,
-		KeyringAccount: c.Keyring.Account,
-	}.WithDefaults(c.Keyring)
+	return nil
 }
 
-func (a AccountConfig) WithDefaults(legacy KeyringConfig) AccountConfig {
-	if a.ID == "" {
-		a.ID = "default"
-	}
-	if a.Name == "" {
-		a.Name = a.ID
-	}
-	if a.KeyringService == "" {
-		a.KeyringService = legacy.Service
-	}
-	if a.KeyringAccount == "" {
-		a.KeyringAccount = legacy.Account
-	}
-	return a
+func (c Config) HasAdminPassword() bool {
+	return strings.TrimSpace(c.Security.AdminPassword) != ""
 }
 
 func (c *Config) applyDefaults() {
@@ -310,25 +329,14 @@ func (c *Config) applyDefaults() {
 	if c.Fallback.RequiredEndpoint == "" {
 		c.Fallback.RequiredEndpoint = d.Fallback.RequiredEndpoint
 	}
-	if c.Keyring.Service == "" {
-		c.Keyring.Service = d.Keyring.Service
-	}
-	if c.Keyring.Account == "" {
-		c.Keyring.Account = d.Keyring.Account
-	}
 	if c.Security.APIKey == "" {
 		c.Security.APIKey = d.Security.APIKey
 	}
-	// Bool fields cannot distinguish absent vs false in the current config shape.
-	// Preserve explicit false values after a config file exists; only default in Save/creation path.
 	if c.Auth.ActiveAccountID == "" {
 		c.Auth.ActiveAccountID = d.Auth.ActiveAccountID
 	}
-	if len(c.Auth.Accounts) == 0 {
+	if c.Auth.Accounts == nil {
 		c.Auth.Accounts = d.Auth.Accounts
-	}
-	for i := range c.Auth.Accounts {
-		c.Auth.Accounts[i] = c.Auth.Accounts[i].WithDefaults(c.Keyring)
 	}
 	if c.UI.Language == "" {
 		c.UI.Language = d.UI.Language
@@ -348,14 +356,11 @@ func (c Config) Validate() error {
 	if strings.TrimSpace(c.Copilot.APIBase) == "" {
 		return errors.New("copilot.api_base is required")
 	}
-	if strings.TrimSpace(c.Keyring.Service) == "" || strings.TrimSpace(c.Keyring.Account) == "" {
-		return errors.New("keyring.service and keyring.account are required")
-	}
 	if c.UI.Language != "" && c.UI.Language != "zh" && c.UI.Language != "en" {
-		return errors.New("ui.language must be zh or en")
+		return fmt.Errorf("ui.language must be zh or en, got %q", c.UI.Language)
 	}
 	if c.UI.Theme != "" && c.UI.Theme != "system" && c.UI.Theme != "light" && c.UI.Theme != "dark" {
-		return errors.New("ui.theme must be system, light, or dark")
+		return fmt.Errorf("ui.theme must be system, light, or dark, got %q", c.UI.Theme)
 	}
 	return nil
 }

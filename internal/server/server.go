@@ -2,26 +2,24 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"path"
-	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Open-Copilot-Proxy/Copilot_Proxy/internal/auth"
 	"github.com/Open-Copilot-Proxy/Copilot_Proxy/internal/config"
-	"github.com/Open-Copilot-Proxy/Copilot_Proxy/internal/keyring"
 	"github.com/Open-Copilot-Proxy/Copilot_Proxy/internal/proxy"
 	"github.com/Open-Copilot-Proxy/Copilot_Proxy/internal/web"
 )
 
 type App struct {
-	cfg        config.Config
+	cfg        *config.Config
 	configPath string
 	auth       *auth.Manager
 	fallback   *proxy.FallbackSelector
@@ -31,40 +29,78 @@ type App struct {
 	deviceFlow *auth.DeviceFlow
 }
 
-func NewApp(cfg config.Config, configPath string, authManager *auth.Manager, fallback *proxy.FallbackSelector, proxyHandler *proxy.Handler, logger *log.Logger) *App {
+func NewApp(cfg *config.Config, configPath string, authManager *auth.Manager, fallback *proxy.FallbackSelector, proxyHandler *proxy.Handler, logger *log.Logger) *App {
 	return &App{cfg: cfg, configPath: configPath, auth: authManager, fallback: fallback, proxy: proxyHandler, logger: logger}
 }
 
 func (a *App) HTTPServer() *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", a.route)
-	return &http.Server{
-		Addr:         a.cfg.ListenAddr(),
-		Handler:      mux,
-		ReadTimeout:  time.Duration(a.cfg.Server.ReadTimeoutSeconds) * time.Second,
-		WriteTimeout: time.Duration(a.cfg.Server.WriteTimeoutSeconds) * time.Second,
+	srv := &http.Server{
+		Addr:        a.cfg.ListenAddr(),
+		Handler:     responseWriterWrapper{mux},
+		ReadTimeout: time.Duration(a.cfg.Server.ReadTimeoutSeconds) * time.Second,
 	}
+	return srv
+}
+
+type responseWriterWrapper struct {
+	handler http.Handler
+}
+
+func (w responseWriterWrapper) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
+	isSSE := r.URL.Path == "/v1/chat/completions" ||
+		r.URL.Path == "/v1/messages" ||
+		strings.HasPrefix(r.URL.Path, "/v1beta/models/")
+	if isSSE {
+		rw.Header().Set("X-Accel-Buffering", "no")
+	}
+	w.handler.ServeHTTP(rw, r)
 }
 
 func (a *App) route(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/" && r.Method == http.MethodGet:
 		a.health(w, r)
-	case r.URL.Path == "/favicon.ico" && r.Method == http.MethodGet:
-		a.serveFavicon(w, r)
 	case r.URL.Path == "/v1/messages":
 		a.proxy.ServeAnthropicMessages(w, r)
 	case strings.HasPrefix(r.URL.Path, "/v1beta/models/"):
 		a.proxy.ServeGeminiModels(w, r, strings.TrimPrefix(r.URL.Path, "/v1beta/models/"))
 	case strings.HasPrefix(r.URL.Path, "/api/"):
+		if !a.authenticateAPI(r) {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			return
+		}
 		a.api(w, r)
 	case r.URL.Path == "/fallback" && r.Method == http.MethodGet:
 		writeJSON(w, http.StatusOK, map[string]string{"fallback_model": a.fallback.Selected()})
-	case a.cfg.Frontend.Enabled && (r.URL.Path == "/ui" || strings.HasPrefix(r.URL.Path, "/ui/")):
-		a.frontend(w, r)
+	case strings.HasPrefix(r.URL.Path, "/ui") || r.URL.Path == "/ui":
+		a.serveFrontend(w, r)
 	default:
 		a.proxy.ServeHTTP(w, r)
 	}
+}
+
+func (a *App) authenticateAPI(r *http.Request) bool {
+	// 登录端点不需要认证
+	if r.URL.Path == "/api/auth/login" {
+		return true
+	}
+	// 如果没有设置 admin password，允许访问（兼容旧配置）
+	if !a.cfg.HasAdminPassword() {
+		return true
+	}
+	token := r.Header.Get("Authorization")
+	if strings.HasPrefix(token, "Bearer ") {
+		token = strings.TrimPrefix(token, "Bearer ")
+	}
+	if token == "" {
+		token = r.URL.Query().Get("token")
+	}
+	if subtle.ConstantTimeCompare([]byte(token), []byte(a.cfg.Security.AdminPassword)) == 1 {
+		return true
+	}
+	return false
 }
 
 func (a *App) health(w http.ResponseWriter, _ *http.Request) {
@@ -82,7 +118,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/status" && r.Method == http.MethodGet:
 		a.status(w, r)
 	case r.URL.Path == "/api/config" && r.Method == http.MethodGet:
-		writeJSON(w, http.StatusOK, a.cfg)
+		a.getConfig(w, r)
 	case r.URL.Path == "/api/config" && r.Method == http.MethodPut:
 		a.updateConfig(w, r)
 	case r.URL.Path == "/api/fallback" && r.Method == http.MethodPut:
@@ -95,35 +131,52 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		a.quota(w, r)
 	case r.URL.Path == "/api/service" && r.Method == http.MethodPost:
 		a.updateService(w, r)
+	case r.URL.Path == "/api/auth/login" && r.Method == http.MethodPost:
+		a.login(w, r)
 	case r.URL.Path == "/api/accounts" && r.Method == http.MethodGet:
-		a.accounts(w, r)
+		a.listAccounts(w, r)
 	case r.URL.Path == "/api/accounts" && r.Method == http.MethodPost:
-		a.createAccount(w, r)
-	case r.URL.Path == "/api/accounts/current" && r.Method == http.MethodDelete:
-		a.deleteCurrentAccount(w, r)
+		a.addAccount(w, r)
 	case r.URL.Path == "/api/accounts/switch" && r.Method == http.MethodPost:
 		a.switchAccount(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/accounts/") && r.Method == http.MethodDelete:
+		a.deleteAccount(w, r)
 	case r.URL.Path == "/api/auth/device/start" && r.Method == http.MethodPost:
 		a.startDevice(w, r)
 	case r.URL.Path == "/api/auth/device/poll" && r.Method == http.MethodPost:
 		a.pollDevice(w, r)
 	case r.URL.Path == "/api/auth/logout" && r.Method == http.MethodPost:
-		if err := a.auth.Logout(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		a.logout(w, r)
 	default:
 		http.NotFound(w, r)
 	}
 }
 
+func (a *App) login(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(payload.Password), []byte(a.cfg.Security.AdminPassword)) == 1 {
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "token": payload.Password})
+		return
+	}
+	writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid password"})
+}
+
 func (a *App) status(w http.ResponseWriter, r *http.Request) {
-	_ = a.ensureActiveAccountLogin(r.Context())
 	expiresAt := a.auth.Expiration()
 	var expires any
 	if !expiresAt.IsZero() {
 		expires = expiresAt.Format(time.RFC3339)
+	}
+	account := a.auth.ActiveAccount()
+	accountName := ""
+	if account != nil {
+		accountName = account.Name
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"github_token_ready":  a.auth.HasGitHubToken(),
@@ -133,8 +186,12 @@ func (a *App) status(w http.ResponseWriter, r *http.Request) {
 		"config_path":         a.configPath,
 		"base_url":            a.cfg.PublicBaseURL(),
 		"service_enabled":     !a.cfg.Runtime.ProxyDisabled,
-		"active_account":      a.auth.ActiveAccount(),
+		"active_account":      accountName,
 	})
+}
+
+func (a *App) getConfig(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, a.cfg)
 }
 
 func (a *App) updateConfig(w http.ResponseWriter, r *http.Request) {
@@ -147,22 +204,22 @@ func (a *App) updateConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	reloaded, _, err := config.Load(a.configPath)
+	reloaded, _, err := config.LoadWithDecryptedTokens(a.configPath)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	if !sameAccount(a.auth.ActiveAccount(), reloaded.ActiveAccount()) {
-		if err := a.auth.SwitchAccount(reloaded.ActiveAccount()); err != nil {
+	if a.cfg.Auth.ActiveAccountID != reloaded.Auth.ActiveAccountID {
+		if err := a.auth.SwitchAccount(r.Context(), reloaded.Auth.ActiveAccountID); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
 	}
-	a.cfg = reloaded
+	*a.cfg = reloaded
 	a.proxy.UpdateConfig(reloaded)
 	a.fallback.UpdateConfig(reloaded)
 	a.refreshFallbackChoice(r)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "saved", "restart_required": "true"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
 }
 
 func (a *App) updateFallback(w http.ResponseWriter, r *http.Request) {
@@ -181,16 +238,16 @@ func (a *App) updateFallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	a.cfg.Fallback.PreferredPrefixes = cleaned
-	if err := config.Save(a.configPath, a.cfg); err != nil {
+	if err := config.Save(a.configPath, *a.cfg); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	reloaded, _, err := config.Load(a.configPath)
+	reloaded, _, err := config.LoadWithDecryptedTokens(a.configPath)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	a.cfg = reloaded
+	*a.cfg = reloaded
 	a.fallback.UpdateConfig(reloaded)
 	a.refreshFallbackChoice(r)
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -210,12 +267,6 @@ func (a *App) refreshFallbackChoice(r *http.Request) {
 	}
 }
 
-func sameAccount(left config.AccountConfig, right config.AccountConfig) bool {
-	return left.ID == right.ID &&
-		left.KeyringService == right.KeyringService &&
-		left.KeyringAccount == right.KeyringAccount
-}
-
 func (a *App) updateService(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		Enabled bool `json:"enabled"`
@@ -225,55 +276,39 @@ func (a *App) updateService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.cfg.Runtime.ProxyDisabled = !payload.Enabled
-	if err := config.Save(a.configPath, a.cfg); err != nil {
+	if err := config.Save(a.configPath, *a.cfg); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	a.proxy.UpdateConfig(a.cfg)
-	a.fallback.UpdateConfig(a.cfg)
+	a.proxy.UpdateConfig(*a.cfg)
+	a.fallback.UpdateConfig(*a.cfg)
 	writeJSON(w, http.StatusOK, map[string]any{"enabled": payload.Enabled})
 }
 
-func (a *App) accounts(w http.ResponseWriter, r *http.Request) {
-	_ = a.ensureActiveAccountLogin(r.Context())
+func (a *App) listAccounts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"active_account_id": a.cfg.Auth.ActiveAccountID,
-		"accounts":          a.cfg.Auth.Accounts,
+		"active_account_id": a.auth.ActiveAccountID(),
+		"accounts":          a.auth.ListAccounts(),
 	})
 }
 
-func (a *App) createAccount(w http.ResponseWriter, r *http.Request) {
+func (a *App) addAccount(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
+		GitHubToken string `json:"github_token"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
-	payload.ID = strings.TrimSpace(payload.ID)
-	if payload.ID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id is required"})
+	account, err := a.auth.AddAccount(r.Context(), payload.GitHubToken)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	if slices.ContainsFunc(a.cfg.Auth.Accounts, func(account config.AccountConfig) bool { return account.ID == payload.ID }) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "account already exists"})
-		return
+	if err := a.auth.RefreshCopilotToken(r.Context()); err != nil {
+		a.logger.Printf("[!] Copilot Token 刷新失败: %v", err)
 	}
-	if strings.TrimSpace(payload.Name) == "" {
-		payload.Name = payload.ID
-	}
-	a.cfg.Auth.Accounts = append(a.cfg.Auth.Accounts, config.AccountConfig{
-		ID:             payload.ID,
-		Name:           payload.Name,
-		KeyringService: a.cfg.Keyring.Service,
-		KeyringAccount: "github-token-" + payload.ID,
-	})
-	if err := config.Save(a.configPath, a.cfg); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, a.cfg.Auth)
+	writeJSON(w, http.StatusOK, account)
 }
 
 func (a *App) switchAccount(w http.ResponseWriter, r *http.Request) {
@@ -281,168 +316,92 @@ func (a *App) switchAccount(w http.ResponseWriter, r *http.Request) {
 		ID string `json:"id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
-	idx := slices.IndexFunc(a.cfg.Auth.Accounts, func(account config.AccountConfig) bool { return account.ID == payload.ID })
-	if idx == -1 {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "account not found"})
-		return
-	}
-	account := a.cfg.Auth.Accounts[idx]
-	if err := a.auth.SwitchAccount(account); err != nil {
+	if err := a.auth.SwitchAccount(r.Context(), payload.ID); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	a.cfg.Auth.ActiveAccountID = account.ID
-	if err := config.Save(a.configPath, a.cfg); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	if a.auth.HasGitHubToken() {
-		_ = a.auth.RefreshCopilotToken(r.Context())
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"active_account_id": account.ID, "github_token_ready": a.auth.HasGitHubToken(), "copilot_token_ready": a.auth.HasCopilotToken()})
-}
-
-func (a *App) deleteCurrentAccount(w http.ResponseWriter, r *http.Request) {
-	account := a.auth.ActiveAccount()
-	_ = a.auth.Logout()
-	if account.KeyringService != "" && account.KeyringAccount != "" && account.KeyringAccount != a.cfg.Keyring.Account {
-		_ = keyring.New(a.cfg.Keyring.Service, a.cfg.Keyring.Account).Delete()
-	}
-
-	filtered := a.cfg.Auth.Accounts[:0]
-	for _, item := range a.cfg.Auth.Accounts {
-		if item.ID != account.ID {
-			filtered = append(filtered, item)
-		}
-	}
-	a.cfg.Auth.Accounts = filtered
-
-	nextIdx := slices.IndexFunc(a.cfg.Auth.Accounts, func(item config.AccountConfig) bool {
-		return item.GitHubUserLogin != ""
+	writeJSON(w, http.StatusOK, map[string]any{
+		"active_account_id":  a.auth.ActiveAccountID(),
+		"github_token_ready": a.auth.HasGitHubToken(),
+		"copilot_token_ready": a.auth.HasCopilotToken(),
 	})
-	if nextIdx >= 0 {
-		next := a.cfg.Auth.Accounts[nextIdx]
-		a.cfg.Auth.ActiveAccountID = next.ID
-		if err := a.auth.SwitchAccount(next); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-		if a.auth.HasGitHubToken() {
-			_ = a.auth.RefreshCopilotToken(r.Context())
-		}
-	} else {
-		defaultAccount := config.AccountConfig{
-			ID:             "default",
-			Name:           "Default",
-			KeyringService: a.cfg.Keyring.Service,
-			KeyringAccount: a.cfg.Keyring.Account,
-		}.WithDefaults(a.cfg.Keyring)
-		a.cfg.Auth.ActiveAccountID = defaultAccount.ID
-		if len(a.cfg.Auth.Accounts) == 0 {
-			a.cfg.Auth.Accounts = []config.AccountConfig{defaultAccount}
-		}
-		_ = a.auth.SwitchAccount(defaultAccount)
-	}
+}
 
-	if err := config.Save(a.configPath, a.cfg); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+func (a *App) deleteAccount(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/accounts/")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "account id is required"})
 		return
 	}
-	a.proxy.UpdateConfig(a.cfg)
-	a.fallback.UpdateConfig(a.cfg)
-	writeJSON(w, http.StatusOK, map[string]any{"active_account_id": a.cfg.Auth.ActiveAccountID, "accounts": a.cfg.Auth.Accounts})
-}
-
-func (a *App) ensureActiveAccountLogin(ctx context.Context) error {
-	account := a.auth.ActiveAccount()
-	if account.GitHubUserLogin != "" || !a.auth.HasGitHubToken() {
-		return nil
+	if err := a.auth.RemoveAccount(r.Context(), id); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
 	}
-	return a.activateTokenAccount(ctx, a.auth.GitHubToken())
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (a *App) activateTokenAccount(ctx context.Context, token string) error {
-	login, err := a.githubLogin(ctx, token)
+func (a *App) startDevice(w http.ResponseWriter, r *http.Request) {
+	flow, err := a.auth.StartDeviceFlow(r.Context())
 	if err != nil {
-		return err
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
 	}
-	account := a.upsertGitHubAccount(login)
-	if err := a.auth.SwitchAccount(account); err != nil {
-		return err
+	a.deviceMu.Lock()
+	a.deviceFlow = &flow
+	a.deviceMu.Unlock()
+	writeJSON(w, http.StatusOK, flow)
+}
+
+func (a *App) pollDevice(w http.ResponseWriter, r *http.Request) {
+	a.deviceMu.Lock()
+	flow := a.deviceFlow
+	a.deviceMu.Unlock()
+	if flow == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "device flow not started"})
+		return
 	}
-	if err := a.auth.SaveGitHubToken(token); err != nil {
-		return err
+	token, oauthErr, err := a.auth.PollAccessToken(r.Context(), flow.DeviceCode)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
 	}
-	if err := a.auth.RefreshCopilotToken(ctx); err != nil && a.logger != nil {
+	if oauthErr != "" {
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": oauthErr})
+		return
+	}
+	if _, err := a.auth.AddAccount(r.Context(), token); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := a.auth.RefreshCopilotToken(context.Background()); err != nil && a.logger != nil {
 		a.logger.Printf("[!] Copilot Token 刷新失败: %v", err)
 	}
-	a.cfg.Auth.ActiveAccountID = account.ID
-	if err := config.Save(a.configPath, a.cfg); err != nil {
-		return err
-	}
-	a.proxy.UpdateConfig(a.cfg)
-	a.fallback.UpdateConfig(a.cfg)
-	return nil
+	a.deviceMu.Lock()
+	a.deviceFlow = nil
+	a.deviceMu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]any{"status": "authorized"})
 }
 
-func (a *App) upsertGitHubAccount(login string) config.AccountConfig {
-	account := config.AccountConfig{
-		ID:              login,
-		Name:            login,
-		KeyringService:  a.cfg.Keyring.Service,
-		KeyringAccount:  "github-token-" + strings.ToLower(login),
-		GitHubUserLogin: login,
+func (a *App) logout(w http.ResponseWriter, r *http.Request) {
+	account := a.auth.ActiveAccount()
+	if account == nil {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
 	}
-	idx := slices.IndexFunc(a.cfg.Auth.Accounts, func(existing config.AccountConfig) bool {
-		return strings.EqualFold(existing.GitHubUserLogin, login) || strings.EqualFold(existing.ID, login)
-	})
-	if idx >= 0 {
-		if a.cfg.Auth.Accounts[idx].KeyringService != "" {
-			account.KeyringService = a.cfg.Auth.Accounts[idx].KeyringService
-		}
-		if a.cfg.Auth.Accounts[idx].KeyringAccount != "" {
-			account.KeyringAccount = a.cfg.Auth.Accounts[idx].KeyringAccount
-		}
-		a.cfg.Auth.Accounts[idx] = account
-		return account
+	if err := a.auth.RemoveAccount(r.Context(), account.ID); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
 	}
-	a.cfg.Auth.Accounts = append(a.cfg.Auth.Accounts, account)
-	return account
-}
-
-func (a *App) githubLogin(ctx context.Context, token string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/user", nil)
-	if err != nil {
-		return "", err
-	}
-	for k, v := range a.cfg.DefaultHeaders() {
-		req.Header.Set(k, v)
-	}
-	req.Header.Set("Authorization", "token "+token)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	var payload struct {
-		Login string `json:"login"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", err
-	}
-	if strings.TrimSpace(payload.Login) == "" {
-		return "", fmt.Errorf("github user request returned status %d without login", resp.StatusCode)
-	}
-	return payload.Login, nil
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (a *App) models(w http.ResponseWriter, r *http.Request) {
 	token := a.auth.CopilotToken()
 	if token == "" {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Copilot token 未就绪"})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Copilot token not ready"})
 		return
 	}
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, strings.TrimRight(a.cfg.Copilot.APIBase, "/")+"/models", nil)
@@ -505,7 +464,7 @@ func modelAvailable(model map[string]any, requiredEndpoint string) bool {
 		return false
 	}
 	if policy, ok := model["policy"].(map[string]any); ok {
-		if state, _ := policy["state"].(string); state != "" && state != "enabled" {
+		if state, _ := policy["state"].(string); state != "" && state == "disabled" {
 			return false
 		}
 	}
@@ -516,16 +475,18 @@ func modelAvailable(model map[string]any, requiredEndpoint string) bool {
 	if !ok || len(raw) == 0 {
 		return true
 	}
-	return slices.ContainsFunc(raw, func(item any) bool {
-		endpoint, _ := item.(string)
-		return endpoint == requiredEndpoint
-	})
+	for _, item := range raw {
+		if endpoint, ok := item.(string); ok && endpoint == requiredEndpoint {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *App) quota(w http.ResponseWriter, r *http.Request) {
 	token := a.auth.GitHubToken()
 	if token == "" {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"available": false, "message": "GitHub token 未就绪"})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"available": false, "message": "GitHub token not ready"})
 		return
 	}
 	endpoints := []string{
@@ -586,12 +547,12 @@ func quotaSummaryFromBody(body any) (map[string]any, bool) {
 		if !ok {
 			continue
 		}
-		remaining := quotaNumber(raw["remaining"])
+		remaining := numberAsString(raw["remaining"])
 		if remaining == "" {
-			remaining = quotaNumber(raw["quota_remaining"])
+			remaining = numberAsString(raw["quota_remaining"])
 		}
-		entitlement := quotaNumber(raw["entitlement"])
-		percent := quotaNumber(raw["percent_remaining"])
+		entitlement := numberAsString(raw["entitlement"])
+		percent := numberAsString(raw["percent_remaining"])
 		unlimited, _ := raw["unlimited"].(bool)
 		if unlimited {
 			parts = append(parts, key+": unlimited")
@@ -614,12 +575,12 @@ func quotaSummaryFromBody(body any) (map[string]any, bool) {
 	}
 	return map[string]any{
 		"available": true,
-		"message":   strings.Join(parts, " · "),
+		"message":   strings.Join(parts, " \u00b7 "),
 		"snapshots": snapshots,
 	}, true
 }
 
-func quotaNumber(value any) string {
+func numberAsString(value any) string {
 	switch v := value.(type) {
 	case int:
 		return fmt.Sprintf("%d", v)
@@ -635,61 +596,7 @@ func quotaNumber(value any) string {
 	}
 }
 
-func (a *App) startDevice(w http.ResponseWriter, r *http.Request) {
-	flow, err := a.auth.StartDeviceFlow(r.Context())
-	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-		return
-	}
-	a.deviceMu.Lock()
-	a.deviceFlow = &flow
-	a.deviceMu.Unlock()
-	_ = auth.OpenBrowser(flow.VerificationURI)
-	writeJSON(w, http.StatusOK, flow)
-}
-
-func (a *App) pollDevice(w http.ResponseWriter, r *http.Request) {
-	a.deviceMu.Lock()
-	flow := a.deviceFlow
-	a.deviceMu.Unlock()
-	if flow == nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "device flow not started"})
-		return
-	}
-	token, err := a.auth.PollDeviceToken(r.Context(), flow.DeviceCode)
-	if err != nil {
-		var pending auth.OAuthPendingError
-		if errors.As(err, &pending) {
-			writeJSON(w, http.StatusAccepted, map[string]string{"status": pending.Error()})
-			return
-		}
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-		return
-	}
-	if err := a.activateTokenAccount(r.Context(), token); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-		return
-	}
-	if err := a.auth.RefreshCopilotToken(context.Background()); err != nil && a.logger != nil {
-		a.logger.Printf("[!] Copilot Token 刷新失败: %v", err)
-	}
-	a.deviceMu.Lock()
-	a.deviceFlow = nil
-	a.deviceMu.Unlock()
-	writeJSON(w, http.StatusOK, map[string]any{"status": "authorized", "active_account": a.auth.ActiveAccount()})
-}
-
-func (a *App) serveFavicon(w http.ResponseWriter, r *http.Request) {
-	dist, _, err := web.DistFS()
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Cache-Control", "public, max-age=86400")
-	http.ServeFileFS(w, r, dist, "favicon.png")
-}
-
-func (a *App) frontend(w http.ResponseWriter, r *http.Request) {
+func (a *App) serveFrontend(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/ui" {
 		http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
 		return

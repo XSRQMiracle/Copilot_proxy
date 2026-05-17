@@ -115,7 +115,12 @@ func isEnabled(model map[string]any) bool {
 	}
 	policy, _ := model["policy"].(map[string]any)
 	state, _ := policy["state"].(string)
-	return state == "" || state == "enabled"
+	// GitHub API 返回多种状态：enabled, disabled, beta, hidden, expired
+	// 只有 disabled 明确不可用，其他状态都视为可用
+	if state == "" || state == "enabled" || state == "beta" || state == "hidden" {
+		return true
+	}
+	return false
 }
 
 func isPickerEnabled(model map[string]any) bool {

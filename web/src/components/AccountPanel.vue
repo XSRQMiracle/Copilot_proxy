@@ -149,6 +149,7 @@ defineExpose({ refresh })
   font-size: var(--cp-font-size-xs);
   font-weight: 600;
   border-radius: 999px;
+  white-space: nowrap;
 }
 
 .badge-active {
@@ -175,6 +176,7 @@ defineExpose({ refresh })
 .account-actions {
   display: flex;
   gap: var(--cp-space-2);
+  flex-shrink: 0;
 }
 
 .account-btn {
@@ -185,6 +187,7 @@ defineExpose({ refresh })
   border: 1px solid transparent;
   transition: all var(--cp-transition-fast);
   outline: none;
+  white-space: nowrap;
 }
 
 .account-btn-switch {

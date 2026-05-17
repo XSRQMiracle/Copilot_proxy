@@ -9,7 +9,7 @@
           </div>
           <div class="field-col">
             <label>监听端口</label>
-            <n-input-number v-model:value="form.server.port" :min="1" :max="65535" size="small" class="field-number" />
+            <n-input-number v-model:value="form.server.port" :min="1" :max="65535" :show-button="false" size="small" class="field-number" />
           </div>
         </div>
 
@@ -169,9 +169,13 @@ onMounted(() => {
   color: var(--cp-color-text-secondary);
 }
 
-.field-number,
-.field-select {
+.field-number {
   width: 100%;
+}
+
+.field-select {
+  width: 120px;
+  flex-shrink: 0;
 }
 
 .field-toggles {

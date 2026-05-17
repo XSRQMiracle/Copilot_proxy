@@ -5,12 +5,7 @@
     <header class="dashboard-hero">
       <div class="hero-left">
         <span class="hero-badge">Dashboard</span>
-        <h1 class="hero-title">
-          <span class="hero-slug">Copilot Proxy</span>
-          <span class="hero-arrow">&rarr;</span>
-          <span class="hero-sub">控制台</span>
-        </h1>
-        <p class="hero-desc">本地代理管理与监控</p>
+        <h1 class="hero-title">Copilot Proxy</h1>
       </div>
       <div class="hero-right">
         <span class="hero-dot" :class="appStore.serviceEnabled ? 'dot-on' : 'dot-off'" />
@@ -207,31 +202,11 @@ onUnmounted(() => {
 }
 
 .hero-title {
-  display: flex;
-  align-items: center;
-  gap: var(--cp-space-3);
   margin: 0;
   font-size: clamp(var(--cp-font-size-xl), 2.5vw, 36px);
   font-weight: 700;
   letter-spacing: -0.03em;
   color: var(--cp-color-text);
-}
-
-.hero-arrow {
-  color: var(--cp-color-primary);
-  font-weight: 300;
-  opacity: 0.6;
-}
-
-.hero-sub {
-  font-weight: 500;
-  color: var(--cp-color-text-secondary);
-}
-
-.hero-desc {
-  margin: 0;
-  font-size: var(--cp-font-size-sm);
-  color: var(--cp-color-text-muted);
 }
 
 .hero-right {

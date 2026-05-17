@@ -1,52 +1,57 @@
 <template>
-  <n-modal v-model:show="modalShow" preset="card" class="device-modal" :bordered="false" title="GitHub 设备授权">
-    <n-spin :show="loading">
-      <n-space v-if="flow" vertical :size="20">
-        <n-alert type="info" :show-icon="true">
-          请在 GitHub 授权页面输入下方验证码。授权完成后会自动返回控制台。
-        </n-alert>
+  <Teleport to="body">
+    <div v-if="modalShow" class="overlay" @click.self="close">
+      <div class="device-dialog">
+        <button class="dialog-close" @click="close">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+        </button>
 
-        <section class="device-code" @click="copyCode">
-          <n-text depth="3">验证码</n-text>
-          <strong>{{ flow.user_code }}</strong>
-          <n-button secondary size="small" @click.stop="copyCode">复制 Code</n-button>
-        </section>
+        <div v-if="!flow && !loading" class="dialog-body">
+          <div class="dialog-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4" />
+              <path d="M9 18c-4.51 2-5-2-7-2" />
+            </svg>
+          </div>
+          <h3 class="dialog-title">GitHub 设备授权</h3>
+          <p class="dialog-desc">正在向 GitHub 申请验证码…</p>
+        </div>
 
-        <n-space vertical :size="8">
-          <n-text depth="3">授权地址</n-text>
-          <a
-            v-if="safeVerificationUri"
-            class="device-link"
-            :href="safeVerificationUri"
-            target="_blank"
-            rel="noopener noreferrer"
-            @click="openBrowserTab"
-          >
-            {{ safeVerificationUri }}
-          </a>
-          <n-button
-            v-if="safeVerificationUri"
-            secondary
-            size="small"
-            class="device-open-btn"
-            @click="openBrowserTab"
-          >
-            重新打开 GitHub
-          </n-button>
-          <n-alert v-else type="error" :show-icon="true">授权地址校验失败，请重新开始授权。</n-alert>
-        </n-space>
+        <div v-else-if="loading && !flow" class="dialog-body">
+          <div class="dialog-spinner" />
+          <p class="dialog-desc">正在获取授权信息…</p>
+        </div>
 
-        <n-progress type="line" :percentage="progress" :show-indicator="false" />
+        <div v-else-if="flow" class="dialog-body">
+          <div class="dialog-header">
+            <h3 class="dialog-title">设备授权</h3>
+            <p class="dialog-desc">在打开的 GitHub 页面中输入下方验证码完成授权</p>
+          </div>
 
-        <n-space justify="space-between" align="center">
-          <n-text depth="3">{{ statusText }}</n-text>
-          <n-button tertiary @click="close">取消</n-button>
-        </n-space>
-      </n-space>
+          <div class="code-block">
+            <span class="code-label">验证码</span>
+            <strong class="code-value">{{ flow.user_code }}</strong>
+            <button class="code-copy" @click="copyCode">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              复制
+            </button>
+          </div>
 
-      <n-empty v-else description="正在创建授权流程" />
-    </n-spin>
-  </n-modal>
+          <div class="timer-track">
+            <div class="timer-fill" :style="{ width: `${progress}%` }" />
+          </div>
+
+          <div class="dialog-footer">
+            <span class="dialog-status">{{ statusText }}</span>
+            <button class="dialog-btn dialog-btn--ghost" @click="close">取消</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
@@ -85,19 +90,6 @@ const progress = computed(() => {
   if (!flow.value || !startedAt.value) return 0
   const elapsed = Math.floor((Date.now() - startedAt.value) / 1000)
   return Math.min(100, Math.round((elapsed / flow.value.expires_in) * 100))
-})
-
-const safeVerificationUri = computed(() => {
-  if (!flow.value?.verification_uri) return ''
-  try {
-    const url = new URL(flow.value.verification_uri)
-    const allowedHosts = new Set(['github.com', 'www.github.com'])
-    if (url.protocol !== 'https:' || !allowedHosts.has(url.hostname)) return ''
-    if (url.pathname !== '/login/device') return ''
-    return url.toString()
-  } catch {
-    return ''
-  }
 })
 
 async function startFlow() {
@@ -216,35 +208,212 @@ onUnmounted(clearPoll)
 </script>
 
 <style scoped>
-.device-modal {
-  width: min(92vw, 560px);
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: fadeIn 200ms ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.device-dialog {
+  position: relative;
+  width: 380px;
+  background: var(--cp-color-card);
+  border: 1px solid var(--cp-color-border);
   border-radius: var(--cp-radius-lg);
   box-shadow: var(--cp-shadow-float);
+  animation: scaleIn 250ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  overflow: hidden;
 }
 
-.device-code {
-  display: grid;
-  justify-items: center;
-  gap: var(--cp-space-3);
-  padding: var(--cp-space-8);
-  border: 1px dashed var(--cp-color-primary);
-  border-radius: var(--cp-radius-lg);
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.dialog-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--cp-color-text-muted);
+  cursor: pointer;
+  transition: all var(--cp-transition-fast);
+  z-index: 1;
+}
+
+.dialog-close:hover {
+  background: var(--cp-color-border);
+  color: var(--cp-color-text);
+}
+
+/* Body */
+.dialog-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--cp-space-4);
+  padding: var(--cp-space-8) var(--cp-space-6) var(--cp-space-6);
+  text-align: center;
+}
+
+.dialog-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cp-space-1);
+}
+
+.dialog-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
   background: var(--cp-color-primary-soft);
-  cursor: copy;
-}
-
-.device-code strong {
-  font-size: clamp(var(--cp-font-size-2xl), 8vw, 56px);
-  letter-spacing: 0.12em;
-}
-
-.device-link {
   color: var(--cp-color-primary);
-  word-break: break-all;
-  text-decoration: none;
+  margin-bottom: var(--cp-space-1);
 }
 
-.device-open-btn {
-  align-self: flex-start;
+.dialog-title {
+  margin: 0;
+  font-size: var(--cp-font-size-lg);
+  font-weight: 700;
+  color: var(--cp-color-text);
+}
+
+.dialog-desc {
+  margin: 0;
+  font-size: var(--cp-font-size-sm);
+  color: var(--cp-color-text-muted);
+  line-height: 1.5;
+}
+
+/* Code block */
+.code-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--cp-space-2);
+  width: 100%;
+  padding: var(--cp-space-5) var(--cp-space-4);
+  border: 1px dashed var(--cp-color-primary);
+  border-radius: var(--cp-radius-md);
+  background: var(--cp-color-primary-soft);
+}
+
+.code-label {
+  font-size: var(--cp-font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--cp-color-text-muted);
+}
+
+.code-value {
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: var(--cp-color-text);
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+}
+
+.code-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cp-space-1);
+  padding: var(--cp-space-1) var(--cp-space-3);
+  font-size: var(--cp-font-size-xs);
+  font-weight: 600;
+  border: 1px solid var(--cp-color-primary);
+  border-radius: var(--cp-radius-sm);
+  background: transparent;
+  color: var(--cp-color-primary);
+  cursor: pointer;
+  transition: all var(--cp-transition-fast);
+  outline: none;
+}
+
+.code-copy:hover {
+  background: var(--cp-color-primary);
+  color: #fff;
+}
+
+/* Timer */
+.timer-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--cp-color-border);
+  overflow: hidden;
+}
+
+.timer-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--cp-color-primary);
+  transition: width 1s linear;
+}
+
+/* Footer */
+.dialog-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  margin-top: var(--cp-space-1);
+}
+
+.dialog-status {
+  font-size: var(--cp-font-size-xs);
+  color: var(--cp-color-text-muted);
+}
+
+.dialog-btn {
+  padding: var(--cp-space-1) var(--cp-space-4);
+  font-size: var(--cp-font-size-sm);
+  border-radius: var(--cp-radius-sm);
+  cursor: pointer;
+  border: 1px solid var(--cp-color-border);
+  outline: none;
+  transition: all var(--cp-transition-fast);
+  background: transparent;
+  color: var(--cp-color-text-secondary);
+}
+
+.dialog-btn:hover {
+  border-color: var(--cp-color-text-muted);
+}
+
+/* Spinner */
+.dialog-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--cp-color-border);
+  border-top-color: var(--cp-color-primary);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

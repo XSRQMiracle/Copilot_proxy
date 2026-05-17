@@ -4,18 +4,18 @@
       <div v-if="form" class="settings-fields">
         <div class="field-row">
           <div class="field-col">
-            <label>监听地址</label>
+            <label>{{ t('settingsForm.listenAddress') }}</label>
             <n-input v-model:value="form.server.host" placeholder="0.0.0.0" size="small" />
           </div>
           <div class="field-col">
-            <label>监听端口</label>
+            <label>{{ t('settingsForm.listenPort') }}</label>
             <n-input-number v-model:value="form.server.port" :min="1" :max="65535" :show-button="false" size="small" class="field-number" />
           </div>
         </div>
 
         <div class="field-row">
           <div class="field-col">
-            <label>对外 API Key</label>
+            <label>{{ t('settingsForm.apiKey') }}</label>
             <n-input v-model:value="form.security.api_key" type="password" show-password-on="click" size="small" />
           </div>
           <div class="field-col">
@@ -26,22 +26,22 @@
 
         <div class="field-row field-row--actions">
           <div class="field-col field-toggles">
-            <label>代理服务</label>
+            <label>{{ t('settingsForm.proxyService') }}</label>
             <n-switch v-model:value="serviceOn" :loading="serviceLoading" size="small" @update:value="updateService">
-              <template #checked>开</template>
-              <template #unchecked>关</template>
+              <template #checked>{{ t('settingsForm.on') }}</template>
+              <template #unchecked>{{ t('settingsForm.off') }}</template>
             </n-switch>
           </div>
           <div class="field-col field-toggles">
-            <label>界面语言</label>
+            <label>{{ t('settingsForm.language') }}</label>
             <n-select v-model:value="form.ui.language" :options="languageOptions" size="small" class="field-select" />
           </div>
         </div>
 
         <div class="field-actions">
-          <button class="field-btn field-btn--ghost" @click="loadConfig">重置</button>
+          <button class="field-btn field-btn--ghost" @click="loadConfig">{{ t('settingsForm.reset') }}</button>
           <button class="field-btn field-btn--primary" :disabled="saving" @click="saveConfig">
-            {{ saving ? '保存中…' : '保存设置' }}
+            {{ saving ? t('settingsForm.saving') : t('settingsForm.save') }}
           </button>
         </div>
       </div>
@@ -53,6 +53,7 @@
 import { onMounted, ref } from 'vue'
 import { useMessage } from 'naive-ui'
 import { configApi, serviceApi, type Config } from '../api'
+import { useI18n } from '../i18n'
 import { useAppStore } from '../stores/app'
 
 const emit = defineEmits<{
@@ -61,6 +62,7 @@ const emit = defineEmits<{
 
 const appStore = useAppStore()
 const message = useMessage()
+const { t } = useI18n()
 
 const form = ref<Config | null>(null)
 const loading = ref(false)
@@ -85,7 +87,7 @@ async function loadConfig() {
     form.value = cloneConfig(cfg)
     serviceOn.value = !cfg.runtime.proxy_disabled
   } catch (err) {
-    message.error(err instanceof Error ? err.message : '配置加载失败')
+    message.error(err instanceof Error ? err.message : t('settingsForm.configLoadError'))
   } finally {
     loading.value = false
   }
@@ -100,13 +102,27 @@ async function updateService(enabled: boolean) {
     if (form.value) form.value.runtime.proxy_disabled = !result.enabled
     if (appStore.config) appStore.config.runtime.proxy_disabled = !result.enabled
     if (appStore.status) appStore.status.service_enabled = result.enabled
-    message.success(result.enabled ? '代理服务已开启' : '代理服务已暂停')
+    message.success(result.enabled ? t('settingsForm.serviceEnabled') : t('settingsForm.serviceDisabled'))
   } catch (err) {
     serviceOn.value = previous
-    message.error(err instanceof Error ? err.message : '服务状态更新失败')
+    message.error(err instanceof Error ? err.message : t('settingsForm.serviceUpdateFail'))
   } finally {
     serviceLoading.value = false
   }
+}
+
+async function waitForServer(): Promise<boolean> {
+  const maxAttempts = 30
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    try {
+      const res = await fetch('/')
+      if (res.ok) return true
+    } catch {
+      // Server still restarting
+    }
+  }
+  return false
 }
 
 async function saveConfig() {
@@ -117,10 +133,17 @@ async function saveConfig() {
     const saved = await configApi.save(form.value)
     const next = cloneConfig(form.value)
     appStore.setConfig(next)
-    message.success(saved.status === 'saved' ? '配置已保存' : '配置保存完成')
-    emit('saved')
+    message.success(t('settingsForm.configSaved'))
+
+    await new Promise(resolve => setTimeout(resolve, 500))
+    const ok = await waitForServer()
+    if (ok) {
+      window.location.reload()
+    } else {
+      message.warning(t('settingsForm.restartTimeout'))
+    }
   } catch (err) {
-    message.error(err instanceof Error ? err.message : '配置保存失败')
+    message.error(err instanceof Error ? err.message : t('settingsForm.configSaveFail'))
   } finally {
     saving.value = false
   }

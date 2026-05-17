@@ -3,15 +3,15 @@
     <div class="status-tags">
       <span class="status-tag" :class="githubReady ? 'tag-ok' : 'tag-warn'">
         <span class="status-dot" />
-        GitHub {{ githubReady ? '就绪' : '缺失' }}
+        {{ githubReady ? t('statusBar.githubReady') : t('statusBar.githubMissing') }}
       </span>
       <span class="status-tag" :class="copilotReady ? 'tag-ok' : 'tag-warn'">
         <span class="status-dot" />
-        Copilot {{ copilotReady ? '就绪' : '缺失' }}
+        {{ copilotReady ? t('statusBar.copilotReady') : t('statusBar.copilotMissing') }}
       </span>
       <span class="status-tag" :class="serviceEnabled ? 'tag-ok' : 'tag-err'">
         <span class="status-dot" />
-        服务 {{ serviceEnabled ? '开启' : '关闭' }}
+        {{ serviceEnabled ? t('statusBar.serviceOn') : t('statusBar.serviceOff') }}
       </span>
     </div>
     <div class="status-right">
@@ -23,10 +23,12 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from '../i18n'
 import { useAppStore } from '../stores/app'
 import ThemeToggle from './ThemeToggle.vue'
 
 const appStore = useAppStore()
+const { t } = useI18n()
 
 const githubReady = computed(() => appStore.githubReady)
 const copilotReady = computed(() => appStore.copilotReady)

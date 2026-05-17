@@ -4,7 +4,7 @@
       <article v-for="row in rows" :key="row.model" class="usage-row">
         <div class="usage-meta">
           <strong class="usage-name">{{ row.model }}</strong>
-          <span class="usage-stat">{{ row.requests }} 次 · {{ formatNumber(row.tokens) }} tok</span>
+          <span class="usage-stat">{{ t('usageChart.requests', { count: row.requests, tokens: formatNumber(row.tokens) }) }}</span>
         </div>
         <div class="usage-bar" :style="{ '--bar-width': `${row.width}%` }">
           <div class="usage-fill">
@@ -16,16 +16,18 @@
     </div>
 
     <div v-else class="usage-empty">
-      <span>暂无请求数据 — 代理收到请求后自动显示各模型调用分布</span>
+      <span>{{ t('usageChart.empty') }}</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from '../i18n'
 import { useAppStore } from '../stores/app'
 
 const appStore = useAppStore()
+const { t } = useI18n()
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat('zh-CN').format(value)

@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -112,7 +114,8 @@ func serve(cfg config.Config, configPath string, logger *log.Logger) error {
 
 	stats := proxy.NewStats(500)
 	proxyHandler := proxy.NewHandler(cfg, authManager, fallbackSelector, client, logger, stats)
-	app := server.NewApp(&cfg, configPath, authManager, fallbackSelector, proxyHandler, logger)
+	restartCh := make(chan struct{}, 1)
+	app := server.NewApp(&cfg, configPath, authManager, fallbackSelector, proxyHandler, logger, restartCh)
 	httpServer := app.HTTPServer()
 
 	logger.Printf("")
@@ -123,6 +126,7 @@ func serve(cfg config.Config, configPath string, logger *log.Logger) error {
 	logger.Printf("  Ctrl+C to stop")
 	logger.Printf("")
 
+	// Shutdown on signal
 	go func() {
 		<-ctx.Done()
 		logger.Println("[~] Shutting down...")
@@ -131,7 +135,7 @@ func serve(cfg config.Config, configPath string, logger *log.Logger) error {
 		_ = httpServer.Shutdown(shutdownCtx)
 	}()
 
-	if authManager.HasCopilotToken() {
+	if os.Getenv("COPILOT_PROXY_RESTARTING") != "1" && authManager.HasCopilotToken() {
 		go func() {
 			time.Sleep(500 * time.Millisecond)
 			if err := auth.OpenBrowser(cfg.PublicBaseURL() + "/ui/"); err != nil {
@@ -140,12 +144,60 @@ func serve(cfg config.Config, configPath string, logger *log.Logger) error {
 		}()
 	}
 
-	err := httpServer.ListenAndServe()
-	if err != nil && err != http.ErrServerClosed {
-		return err
+	// Retry listener to handle brief TIME_WAIT / orphan process on restart
+	var ln net.Listener
+	{
+		var err error
+		for i := range 3 {
+			ln, err = net.Listen("tcp", httpServer.Addr)
+			if err == nil {
+				break
+			}
+			logger.Printf("[~] Port %s not available (attempt %d/3), retrying...", cfg.PublicBaseURL(), i+1)
+			time.Sleep(time.Duration(i+1) * 500 * time.Millisecond)
+		}
+		if err != nil {
+			return fmt.Errorf("listen %s after retries: %w", httpServer.Addr, err)
+		}
+		defer ln.Close()
 	}
-	logger.Println("[~] Proxy stopped")
-	return nil
+
+	// ListenAndServe in a goroutine so we can also listen for restart signals
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- httpServer.Serve(ln)
+	}()
+
+	select {
+	case err := <-serveErr:
+		if err != nil && err != http.ErrServerClosed {
+			return err
+		}
+		logger.Println("[~] Proxy stopped")
+		return nil
+
+	case <-restartCh:
+		logger.Println("[~] Restarting...")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = httpServer.Shutdown(shutdownCtx)
+		cancel()
+
+		exe, err := os.Executable()
+		if err != nil {
+			logger.Printf("[!] restart: %v", err)
+			return nil
+		}
+		cmd := exec.Command(exe, os.Args[1:]...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Env = append(os.Environ(), "COPILOT_PROXY_RESTARTING=1")
+		if err := cmd.Start(); err != nil {
+			logger.Printf("[!] restart: %v", err)
+			return nil
+		}
+		logger.Println("[+] New process started, exiting")
+		return nil
+	}
 }
 
 func login(cfg config.Config, logger *log.Logger) error {

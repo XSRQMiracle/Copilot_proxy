@@ -10,13 +10,13 @@
         >
           <template #prefix>
             <span class="account-badge" :class="account.id === activeAccountId ? 'badge-active' : 'badge-idle'">
-              {{ account.id === activeAccountId ? '当前' : '备用' }}
+              {{ account.id === activeAccountId ? t('accountPanel.current') : t('accountPanel.standby') }}
             </span>
           </template>
 
           <n-thing :title="account.name || account.github_user_login || account.id">
             <template #description>
-              <span class="account-desc">{{ account.github_user_login || 'GitHub 用户待同步' }}</span>
+              <span class="account-desc">{{ account.github_user_login || t('accountPanel.githubUserPending') }}</span>
               <span class="account-id">ID: {{ account.id }}</span>
             </template>
           </n-thing>
@@ -29,17 +29,17 @@
                 :disabled="switchingId === account.id"
                 @click.stop="switchAccount(account.id)"
               >
-                {{ switchingId === account.id ? '…' : '切换' }}
+                {{ switchingId === account.id ? '…' : t('accountPanel.switch') }}
               </button>
-              <button class="account-btn account-btn-del" @click.stop="confirmDelete(account)">删除</button>
+              <button class="account-btn account-btn-del" @click.stop="confirmDelete(account)">{{ t('accountPanel.delete') }}</button>
             </div>
           </template>
         </n-list-item>
       </n-list>
 
       <div v-else class="account-empty">
-        <p>还没有 GitHub 账号</p>
-        <button class="account-add-btn" @click="emit('start-auth')">开始 GitHub 授权</button>
+        <p>{{ t('accountPanel.noAccount') }}</p>
+        <button class="account-add-btn" @click="emit('start-auth')">{{ t('accountPanel.startAuth') }}</button>
       </div>
     </n-spin>
   </div>
@@ -49,6 +49,7 @@
 import { onMounted, ref } from 'vue'
 import { useDialog, useMessage } from 'naive-ui'
 import { accountsApi, statusApi, type Account } from '../api'
+import { useI18n } from '../i18n'
 import { useAppStore } from '../stores/app'
 
 const emit = defineEmits<{
@@ -58,6 +59,7 @@ const emit = defineEmits<{
 const appStore = useAppStore()
 const message = useMessage()
 const dialog = useDialog()
+const { t } = useI18n()
 
 const accounts = ref<Account[]>([])
 const activeAccountId = ref('')
@@ -76,7 +78,7 @@ async function refresh() {
     }
     appStore.status = await statusApi.get().catch(() => appStore.status)
   } catch (err) {
-    message.error(err instanceof Error ? err.message : '账号列表加载失败')
+    message.error(err instanceof Error ? err.message : t('accountPanel.loadError'))
   } finally {
     loading.value = false
   }
@@ -89,9 +91,9 @@ async function switchAccount(id: string) {
     activeAccountId.value = result.active_account_id
     if (appStore.config) appStore.config.auth.active_account_id = result.active_account_id
     appStore.status = await statusApi.get()
-    message.success('已切换当前账号')
+    message.success(t('accountPanel.switchSuccess'))
   } catch (err) {
-    message.error(err instanceof Error ? err.message : '账号切换失败')
+    message.error(err instanceof Error ? err.message : t('accountPanel.switchFail'))
   } finally {
     switchingId.value = ''
   }
@@ -99,18 +101,18 @@ async function switchAccount(id: string) {
 
 function confirmDelete(account: Account) {
   dialog.warning({
-    title: '删除账号',
-    content: `确认删除「${account.name || account.github_user_login || account.id}」吗？此操作不可恢复。`,
-    positiveText: '删除',
-    negativeText: '取消',
+    title: t('accountPanel.deleteTitle'),
+    content: t('accountPanel.deleteConfirm', { name: account.name || account.github_user_login || account.id }),
+    positiveText: t('accountPanel.deletePositive'),
+    negativeText: t('accountPanel.deleteNegative'),
     draggable: true,
     onPositiveClick: async () => {
       try {
         await accountsApi.remove(account.id)
-        message.success('账号已删除')
+        message.success(t('accountPanel.deleteSuccess'))
         await refresh()
       } catch (err) {
-        message.error(err instanceof Error ? err.message : '账号删除失败')
+        message.error(err instanceof Error ? err.message : t('accountPanel.deleteFail'))
         return false
       }
     },

@@ -6,7 +6,7 @@
           <span class="quota-dot" :class="row.tone" />
           <strong class="quota-label">{{ row.label }}</strong>
         </div>
-        <div class="quota-track" :aria-label="`${row.label} 剩余 ${row.percent}%`">
+        <div class="quota-track" :aria-label="row.ariaLabel">
           <div class="quota-fill" :class="row.tone" :style="{ width: `${row.percent}%` }" />
         </div>
         <span class="quota-caption">{{ row.caption }}</span>
@@ -14,22 +14,24 @@
     </div>
 
     <div v-else class="quota-empty">
-      <span>{{ quota?.message || '暂无可用额度信息' }}</span>
+      <span>{{ quota?.message || t('quotaDisplay.noQuota') }}</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from '../i18n'
 import { useAppStore } from '../stores/app'
 import type { QuotaSnapshot } from '../api'
 
 const appStore = useAppStore()
+const { t } = useI18n()
 
-const labels: Record<string, string> = {
-  premium_interactions: '高级交互',
-  chat: '聊天额度',
-  completions: '补全额度',
+const quotaLabelKeys: Record<string, string> = {
+  premium_interactions: 'quotaDisplay.premiumInteractions',
+  chat: 'quotaDisplay.chat',
+  completions: 'quotaDisplay.completions',
 }
 
 const quota = computed(() => appStore.quota)
@@ -55,19 +57,23 @@ function toneFor(percent: number): 'quota-good' | 'quota-warn' | 'quota-danger' 
 
 const rows = computed(() => {
   const snapshots = appStore.quota?.snapshots ?? {}
-  return Object.keys(labels)
+  return Object.keys(quotaLabelKeys)
     .map((key) => {
       const snapshot = snapshots[key]
       if (!snapshot) return null
       const percent = snapshotPercent(snapshot)
       const remaining = snapshot.remaining ?? snapshot.quota_remaining ?? 0
       const entitlement = snapshot.entitlement ?? 0
-      const caption = snapshot.unlimited ? '无限额度' : `${remaining}/${entitlement || '未知'} · ${percent}% 剩余`
+      const label = t(quotaLabelKeys[key])
+      const caption = snapshot.unlimited
+        ? t('quotaDisplay.unlimited')
+        : t('quotaDisplay.remaining', { remaining, total: entitlement || '-', percent })
       return {
         key,
-        label: labels[key],
+        label,
         percent,
         caption,
+        ariaLabel: `${label} ${caption}`,
         tone: toneFor(percent),
       }
     })

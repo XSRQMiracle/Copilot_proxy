@@ -13,30 +13,30 @@
               <path d="M9 18c-4.51 2-5-2-7-2" />
             </svg>
           </div>
-          <h3 class="dialog-title">GitHub 设备授权</h3>
-          <p class="dialog-desc">正在向 GitHub 申请验证码…</p>
+          <h3 class="dialog-title">{{ t('deviceAuth.title') }}</h3>
+          <p class="dialog-desc">{{ t('deviceAuth.requestingCode') }}</p>
         </div>
 
         <div v-else-if="loading && !flow" class="dialog-body">
           <div class="dialog-spinner" />
-          <p class="dialog-desc">正在获取授权信息…</p>
+          <p class="dialog-desc">{{ t('deviceAuth.fetchingInfo') }}</p>
         </div>
 
         <div v-else-if="flow" class="dialog-body">
           <div class="dialog-header">
-            <h3 class="dialog-title">设备授权</h3>
-            <p class="dialog-desc">在打开的 GitHub 页面中输入下方验证码完成授权</p>
+            <h3 class="dialog-title">{{ t('deviceAuth.authTitle') }}</h3>
+            <p class="dialog-desc">{{ t('deviceAuth.authDesc') }}</p>
           </div>
 
           <div class="code-block">
-            <span class="code-label">验证码</span>
+            <span class="code-label">{{ t('deviceAuth.codeLabel') }}</span>
             <strong class="code-value">{{ flow.user_code }}</strong>
             <button class="code-copy" @click="copyCode">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
               </svg>
-              复制
+              {{ t('deviceAuth.copy') }}
             </button>
           </div>
 
@@ -46,7 +46,7 @@
 
           <div class="dialog-footer">
             <span class="dialog-status">{{ statusText }}</span>
-            <button class="dialog-btn dialog-btn--ghost" @click="close">取消</button>
+            <button class="dialog-btn dialog-btn--ghost" @click="close">{{ t('deviceAuth.cancel') }}</button>
           </div>
         </div>
       </div>
@@ -58,6 +58,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useMessage } from 'naive-ui'
 import { deviceApi, type DeviceFlow } from '../api'
+import { useI18n } from '../i18n'
 
 const props = defineProps<{
   show: boolean
@@ -69,10 +70,11 @@ const emit = defineEmits<{
 }>()
 
 const message = useMessage()
+const { t } = useI18n()
 const flow = ref<DeviceFlow | null>(null)
 const loading = ref(false)
 const polling = ref(false)
-const statusText = ref('等待 GitHub 授权确认…')
+const statusText = ref(t('deviceAuth.waitingAuth'))
 const startedAt = ref(0)
 let pollTimer: number | undefined
 let pollIntervalSeconds = 5
@@ -95,7 +97,7 @@ const progress = computed(() => {
 async function startFlow() {
   const runId = ++flowRunId
   loading.value = true
-  statusText.value = '正在向 GitHub 申请验证码…'
+  statusText.value = t('deviceAuth.startDevice')
   clearPoll()
   try {
     const nextFlow = await deviceApi.start()
@@ -103,12 +105,12 @@ async function startFlow() {
     flow.value = nextFlow
     pollIntervalSeconds = Math.max(1, flow.value.interval || 5)
     startedAt.value = Date.now()
-    statusText.value = '等待你在 GitHub 页面确认授权…'
+    statusText.value = t('deviceAuth.waitConfirm')
     openBrowserTab()
     schedulePoll(runId)
   } catch (err) {
     if (!isCurrentRun(runId)) return
-    message.error(err instanceof Error ? err.message : '设备授权启动失败')
+    message.error(err instanceof Error ? err.message : t('deviceAuth.startFail'))
     emit('update:show', false)
   } finally {
     if (isCurrentRun(runId)) loading.value = false
@@ -120,7 +122,7 @@ function schedulePoll(runId: number) {
   pollTimer = window.setTimeout(() => {
     poll(runId).catch((err) => {
       if (!isCurrentRun(runId)) return
-      statusText.value = err instanceof Error ? err.message : '轮询授权状态失败'
+      statusText.value = err instanceof Error ? err.message : t('deviceAuth.pollFail')
       schedulePoll(runId)
     })
   }, pollIntervalSeconds * 1000)
@@ -133,7 +135,7 @@ async function poll(runId: number) {
     const result = await deviceApi.poll()
     if (!isCurrentRun(runId)) return
     if (result.status === 'authorized') {
-      message.success('GitHub 授权成功')
+      message.success(t('deviceAuth.authSuccess'))
       clearPoll()
       emit('authorized')
       emit('update:show', false)
@@ -141,7 +143,7 @@ async function poll(runId: number) {
     }
     if (result.status === 'slow_down') pollIntervalSeconds += 5
     if (result.status === 'expired' || result.status === 'expired_token' || result.status === 'access_denied') {
-      message.error('授权已过期或被拒绝，请重新开始')
+      message.error(t('deviceAuth.authExpired'))
       close()
       return
     }
@@ -154,20 +156,20 @@ async function poll(runId: number) {
 
 function statusLabel(status: string): string {
   const labels: Record<string, string> = {
-    pending: '等待 GitHub 授权确认…',
-    authorization_pending: '还没有确认授权，继续等待中…',
-    slow_down: 'GitHub 要求降低轮询频率，已自动放慢…',
+    pending: t('deviceAuth.statusPending'),
+    authorization_pending: t('deviceAuth.statusAuthorizationPending'),
+    slow_down: t('deviceAuth.statusSlowDown'),
   }
-  return labels[status] ?? `当前状态：${status}`
+  return labels[status] ?? t('deviceAuth.statusDefault', { status })
 }
 
 async function copyCode() {
   if (!flow.value) return
   try {
     await navigator.clipboard.writeText(flow.value.user_code)
-    message.success('验证码已复制')
+    message.success(t('deviceAuth.copied'))
   } catch {
-    message.warning('浏览器不允许自动复制，请手动复制验证码')
+    message.warning(t('deviceAuth.copyFail'))
   }
 }
 
@@ -175,7 +177,7 @@ function openBrowserTab() {
   if (!flow.value?.verification_uri) return
   const tab = window.open(flow.value.verification_uri, '_blank', 'noopener,noreferrer')
   if (!tab || tab.closed) {
-    message.warning('浏览器弹窗被拦截，请手动点击链接打开')
+    message.warning(t('deviceAuth.popupBlocked'))
   }
 }
 

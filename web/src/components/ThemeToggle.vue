@@ -29,12 +29,14 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from '../i18n'
 import { useAppStore } from '../stores/app'
 
 const appStore = useAppStore()
+const { t } = useI18n()
 
 const themeLabel = computed(() => {
-  const labels = { system: '跟随系统', light: '浅色模式', dark: '深色模式' }
+  const labels = { system: t('themeToggle.system'), light: t('themeToggle.light'), dark: t('themeToggle.dark') }
   return labels[appStore.theme]
 })
 </script>

@@ -27,10 +27,12 @@ type App struct {
 	logger     *log.Logger
 	deviceMu   sync.Mutex
 	deviceFlow *auth.DeviceFlow
+	restartCh  chan<- struct{}
+	restartMu  sync.Once
 }
 
-func NewApp(cfg *config.Config, configPath string, authManager *auth.Manager, fallback *proxy.FallbackSelector, proxyHandler *proxy.Handler, logger *log.Logger) *App {
-	return &App{cfg: cfg, configPath: configPath, auth: authManager, fallback: fallback, proxy: proxyHandler, logger: logger}
+func NewApp(cfg *config.Config, configPath string, authManager *auth.Manager, fallback *proxy.FallbackSelector, proxyHandler *proxy.Handler, logger *log.Logger, restartCh chan<- struct{}) *App {
+	return &App{cfg: cfg, configPath: configPath, auth: authManager, fallback: fallback, proxy: proxyHandler, logger: logger, restartCh: restartCh}
 }
 
 func (a *App) HTTPServer() *http.Server {
@@ -194,6 +196,15 @@ func (a *App) getConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, a.cfg)
 }
 
+func (a *App) triggerRestart() {
+	a.restartMu.Do(func() {
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			a.restartCh <- struct{}{}
+		}()
+	})
+}
+
 func (a *App) updateConfig(w http.ResponseWriter, r *http.Request) {
 	var next config.Config
 	if err := json.NewDecoder(r.Body).Decode(&next); err != nil {
@@ -220,6 +231,7 @@ func (a *App) updateConfig(w http.ResponseWriter, r *http.Request) {
 	a.fallback.UpdateConfig(reloaded)
 	a.refreshFallbackChoice(r)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+	a.triggerRestart()
 }
 
 func (a *App) updateFallback(w http.ResponseWriter, r *http.Request) {

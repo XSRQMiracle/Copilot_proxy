@@ -5,18 +5,18 @@
       <n-space vertical :size="24">
         <header class="login-header">
           <n-tag type="primary" round>Copilot Proxy</n-tag>
-          <h1>管理面板登录</h1>
-          <p>输入管理密码后即可查看账号、额度、模型与请求状态。</p>
+          <h1>{{ t('loginView.title') }}</h1>
+          <p>{{ t('loginView.desc') }}</p>
         </header>
 
         <n-form @submit.prevent="handleLogin">
-          <n-form-item label="管理密码">
+          <n-form-item :label="t('loginView.passwordLabel')">
             <n-input
               v-model:value="password"
               type="password"
               size="large"
               show-password-on="click"
-              placeholder="请输入 admin password"
+              :placeholder="t('loginView.passwordPlaceholder')"
               :disabled="loading"
               @keyup.enter="handleLogin"
             />
@@ -34,7 +34,7 @@
             :loading="loading"
             :disabled="!password.trim()"
           >
-            进入仪表盘
+            {{ t('loginView.submit') }}
           </n-button>
         </n-form>
       </n-space>
@@ -47,11 +47,13 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { authApi, setAuthToken } from '../api'
+import { useI18n } from '../i18n'
 import { useAppStore } from '../stores/app'
 
 const router = useRouter()
 const message = useMessage()
 const appStore = useAppStore()
+const { t } = useI18n()
 
 const password = ref('')
 const loading = ref(false)
@@ -67,10 +69,10 @@ async function handleLogin() {
     const result = await authApi.login(trimmed)
     setAuthToken(result.token)
     appStore.isLoggedIn = true
-    message.success('登录成功，欢迎回来')
+    message.success(t('loginView.loginSuccess'))
     await router.push('/')
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '登录失败，请检查密码'
+    error.value = err instanceof Error ? err.message : t('loginView.loginFail')
     message.error(error.value)
   } finally {
     loading.value = false

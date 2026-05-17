@@ -4,12 +4,12 @@
       <table class="request-table">
         <thead>
           <tr>
-            <th>时间</th>
-            <th>协议</th>
-            <th>模型</th>
-            <th>状态</th>
+            <th>{{ t('requestTable.time') }}</th>
+            <th>{{ t('requestTable.protocol') }}</th>
+            <th>{{ t('requestTable.model') }}</th>
+            <th>{{ t('requestTable.status') }}</th>
             <th>Token</th>
-            <th>耗时</th>
+            <th>{{ t('requestTable.duration') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -24,7 +24,7 @@
               <td class="request-model">{{ record.model || 'unknown' }}</td>
               <td>
                 <span class="req-status" :class="record.success ? 'req-ok' : 'req-err'">
-                  {{ record.success ? '成功' : '失败' }}
+                  {{ record.success ? t('requestTable.success') : t('requestTable.failed') }}
                 </span>
               </td>
               <td>{{ formatNumber(record.total_tokens) }}</td>
@@ -33,11 +33,11 @@
             <tr v-if="expandedId === record.id" class="request-detail-row">
               <td colspan="6">
                 <div class="request-detail">
-                  <span><strong>方法：</strong>{{ record.method }}</span>
-                  <span><strong>路径：</strong>{{ record.path }}</span>
-                  <span><strong>输入：</strong>{{ formatNumber(record.prompt_tokens) }}</span>
-                  <span><strong>输出：</strong>{{ formatNumber(record.completion_tokens) }}</span>
-                  <span v-if="record.error" class="request-error"><strong>错误：</strong>{{ record.error }}</span>
+                  <span><strong>{{ t('requestTable.method') }}:</strong>{{ record.method }}</span>
+                  <span><strong>{{ t('requestTable.path') }}:</strong>{{ record.path }}</span>
+                  <span><strong>{{ t('requestTable.input') }}:</strong>{{ formatNumber(record.prompt_tokens) }}</span>
+                  <span><strong>{{ t('requestTable.output') }}:</strong>{{ formatNumber(record.completion_tokens) }}</span>
+                  <span v-if="record.error" class="request-error"><strong>{{ t('requestTable.error') }}:</strong>{{ record.error }}</span>
                 </div>
               </td>
             </tr>
@@ -47,16 +47,18 @@
     </div>
 
     <div v-else class="request-empty">
-      <span>暂无请求记录 — 发起 OpenAI、Anthropic 或 Gemini 兼容请求后自动记录</span>
+      <span>{{ t('requestTable.empty') }}</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useI18n } from '../i18n'
 import { useAppStore } from '../stores/app'
 
 const appStore = useAppStore()
+const { t } = useI18n()
 const expandedId = ref<number | null>(null)
 
 const records = computed(() => appStore.stats?.recent ?? [])

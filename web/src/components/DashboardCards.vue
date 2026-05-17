@@ -10,9 +10,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from '../i18n'
 import { useAppStore } from '../stores/app'
 
 const appStore = useAppStore()
+const { t } = useI18n()
 
 function formatNumber(value: number | undefined): string {
   return new Intl.NumberFormat('zh-CN').format(value ?? 0)
@@ -26,27 +28,30 @@ const successRate = computed(() => {
 
 const cards = computed(() => [
   {
-    label: '总请求数',
+    label: t('dashboardCards.totalRequests'),
     value: formatNumber(appStore.stats?.total_requests),
-    meta: `成功率 ${successRate.value}%`,
+    meta: t('dashboardCards.successRate', { rate: successRate.value }),
     type: successRate.value >= 90 ? 'success' : 'warning',
   },
   {
-    label: '成功请求',
+    label: t('dashboardCards.successful'),
     value: formatNumber(appStore.stats?.successful),
-    meta: '已正常完成',
+    meta: t('dashboardCards.successfulMeta'),
     type: 'success',
   },
   {
-    label: '失败请求',
+    label: t('dashboardCards.failed'),
     value: formatNumber(appStore.stats?.failed),
-    meta: (appStore.stats?.failed ?? 0) > 0 ? '需要关注' : '无异常',
+    meta: (appStore.stats?.failed ?? 0) > 0 ? t('dashboardCards.failedMetaAttention') : t('dashboardCards.failedMetaNormal'),
     type: (appStore.stats?.failed ?? 0) > 0 ? 'error' : 'success',
   },
   {
     label: 'Token',
     value: formatNumber(appStore.stats?.total_tokens),
-    meta: `输入 ${formatNumber(appStore.stats?.prompt_tokens)} / 输出 ${formatNumber(appStore.stats?.completion_tokens)}`,
+    meta: t('dashboardCards.tokenMeta', {
+      prompt: formatNumber(appStore.stats?.prompt_tokens),
+      completion: formatNumber(appStore.stats?.completion_tokens),
+    }),
     type: 'info',
   },
 ])

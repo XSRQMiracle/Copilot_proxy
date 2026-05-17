@@ -2,7 +2,7 @@
   <div class="model-panel">
     <div class="model-toolbar">
       <button class="model-tb-btn" :disabled="loading" @click="loadData">
-        {{ loading ? '刷新中…' : '刷新模型' }}
+        {{ loading ? t('modelPicker.refreshing') : t('modelPicker.refresh') }}
       </button>
     </div>
 
@@ -10,7 +10,7 @@
       <div class="model-sections">
         <section class="model-section">
           <div class="model-section__head">
-            <span>可用模型</span>
+            <span>{{ t('modelPicker.availableModels') }}</span>
             <span class="model-count">{{ availableModels.length }}</span>
           </div>
           <div v-if="availableModels.length" class="model-scroll">
@@ -22,12 +22,12 @@
               <span class="model-item__add">+</span>
             </article>
           </div>
-          <div v-else class="model-empty">暂无可添加模型</div>
+          <div v-else class="model-empty">{{ t('modelPicker.noModelsToAdd') }}</div>
         </section>
 
         <section class="model-section">
           <div class="model-section__head">
-            <span>回退列表</span>
+            <span>{{ t('modelPicker.fallbackList') }}</span>
             <span class="model-count">{{ fallbackList.length }}</span>
           </div>
 
@@ -35,10 +35,10 @@
             <input
               v-model="manualModel"
               class="model-input"
-              placeholder="手动输入模型 ID"
+              :placeholder="t('modelPicker.manualPlaceholder')"
               @keyup.enter="addManualModel"
             />
-            <button class="model-add-btn" @click="addManualModel">添加</button>
+            <button class="model-add-btn" @click="addManualModel">{{ t('modelPicker.add') }}</button>
           </div>
 
           <div v-if="fallbackList.length" class="model-scroll">
@@ -52,14 +52,14 @@
               </div>
             </article>
           </div>
-          <div v-else class="model-empty">回退列表为空</div>
+          <div v-else class="model-empty">{{ t('modelPicker.emptyFallback') }}</div>
         </section>
       </div>
 
       <div class="model-actions">
-        <button class="field-btn field-btn--ghost" @click="resetFallback">恢复配置</button>
+        <button class="field-btn field-btn--ghost" @click="resetFallback">{{ t('modelPicker.reset') }}</button>
         <button class="field-btn field-btn--primary" :disabled="saving" @click="saveFallback">
-          {{ saving ? '保存中…' : '确认保存' }}
+          {{ saving ? t('modelPicker.saving') : t('modelPicker.confirmSave') }}
         </button>
       </div>
     </n-spin>
@@ -70,10 +70,12 @@
 import { computed, onMounted, ref } from 'vue'
 import { useMessage } from 'naive-ui'
 import { configApi, fallbackApi, modelsApi, statusApi, type ModelItem } from '../api'
+import { useI18n } from '../i18n'
 import { useAppStore } from '../stores/app'
 
 const appStore = useAppStore()
 const message = useMessage()
+const { t } = useI18n()
 
 const loading = ref(false)
 const saving = ref(false)
@@ -128,7 +130,7 @@ async function loadData() {
     appStore.models = modelResponse.data ?? []
     fallbackList.value = [...cfg.fallback.preferred_prefixes]
   } catch (err) {
-    message.error(err instanceof Error ? err.message : '模型数据加载失败')
+    message.error(err instanceof Error ? err.message : t('modelPicker.loadError'))
   } finally {
     loading.value = false
   }
@@ -142,9 +144,9 @@ async function saveFallback() {
     fallbackList.value = result.preferred_prefixes
     if (appStore.config) appStore.config.fallback.preferred_prefixes = result.preferred_prefixes
     appStore.status = await statusApi.get().catch(() => appStore.status)
-    message.success('回退模型列表已保存')
+    message.success(t('modelPicker.saveSuccess'))
   } catch (err) {
-    message.error(err instanceof Error ? err.message : '回退模型保存失败')
+    message.error(err instanceof Error ? err.message : t('modelPicker.saveFail'))
   } finally {
     saving.value = false
   }

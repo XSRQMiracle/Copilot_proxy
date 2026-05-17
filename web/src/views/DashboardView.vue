@@ -9,7 +9,7 @@
       </div>
       <div class="hero-right">
         <span class="hero-dot" :class="appStore.serviceEnabled ? 'dot-on' : 'dot-off'" />
-        <span class="hero-status">{{ appStore.serviceEnabled ? '服务运行中' : '服务已暂停' }}</span>
+        <span class="hero-status">{{ appStore.serviceEnabled ? t('dashboardView.serviceRunning') : t('dashboardView.servicePaused') }}</span>
         <button class="hero-refresh" :class="{ 'is-spinning': refreshing }" @click="refreshAll">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="23 4 23 10 17 10" />
@@ -28,7 +28,7 @@
       <aside class="dash-left">
         <div class="dash-card">
           <div class="dash-card-header">
-            <h2>账号</h2>
+            <h2>{{ t('dashboardView.sectionAccounts') }}</h2>
             <button class="dash-card-btn" @click="showDeviceAuth = true">+ GitHub</button>
           </div>
           <div class="dash-card-body">
@@ -38,7 +38,7 @@
 
         <div class="dash-card">
           <div class="dash-card-header">
-            <h2>设置</h2>
+            <h2>{{ t('dashboardView.sectionSettings') }}</h2>
           </div>
           <div class="dash-card-body">
             <SettingsForm @saved="refreshAll" />
@@ -47,7 +47,7 @@
 
         <div class="dash-card">
           <div class="dash-card-header">
-            <h2>回退模型</h2>
+            <h2>{{ t('dashboardView.sectionFallback') }}</h2>
           </div>
           <div class="dash-card-body">
             <ModelPicker />
@@ -64,7 +64,7 @@
 
         <div class="dash-card">
           <div class="dash-card-header">
-            <h2>额度</h2>
+            <h2>{{ t('dashboardView.sectionQuota') }}</h2>
           </div>
           <div class="dash-card-body">
             <QuotaDisplay />
@@ -73,7 +73,7 @@
 
         <div class="dash-card">
           <div class="dash-card-header">
-            <h2>模型用量</h2>
+            <h2>{{ t('dashboardView.sectionUsage') }}</h2>
           </div>
           <div class="dash-card-body">
             <UsageChart />
@@ -84,7 +84,7 @@
 
     <div class="dash-card dash-table-section">
       <div class="dash-card-header">
-        <h2>最近请求</h2>
+        <h2>{{ t('dashboardView.sectionRequests') }}</h2>
       </div>
       <div class="dash-card-body">
         <RequestTable />
@@ -99,6 +99,7 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useMessage } from 'naive-ui'
 import { configApi, quotaApi, statsApi, statusApi } from '../api'
+import { useI18n } from '../i18n'
 import { useAppStore } from '../stores/app'
 import StatusBar from '../components/StatusBar.vue'
 import AccountPanel from '../components/AccountPanel.vue'
@@ -112,6 +113,7 @@ import RequestTable from '../components/RequestTable.vue'
 
 const appStore = useAppStore()
 const message = useMessage()
+const { t } = useI18n()
 
 const refreshing = ref(false)
 const loadError = ref('')
@@ -133,7 +135,7 @@ async function refreshAll() {
       configApi.get(),
       statsApi.get(),
       quotaApi.get().catch((err) => {
-        const reason = err instanceof Error ? err.message : '额度接口暂不可用'
+        const reason = err instanceof Error ? err.message : t('dashboardView.quotaError')
         return { available: false, message: reason }
       }),
     ])
@@ -144,7 +146,7 @@ async function refreshAll() {
     appStore.quota = quota
     appStore.isLoggedIn = true
   } catch (err) {
-    loadError.value = err instanceof Error ? err.message : '加载仪表盘失败'
+    loadError.value = err instanceof Error ? err.message : t('dashboardView.dashboardLoadError')
     message.error(loadError.value)
   } finally {
     refreshing.value = false
@@ -152,7 +154,7 @@ async function refreshAll() {
 }
 
 async function handleAuthorized() {
-  message.success('GitHub 授权完成，账号已加入')
+  message.success(t('dashboardView.authComplete'))
   await accountPanelRef.value?.refresh()
   await refreshAll()
 }

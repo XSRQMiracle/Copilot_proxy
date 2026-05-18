@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"runtime"
@@ -32,6 +33,7 @@ func deriveMachineKey() []byte {
 		material = host
 	}
 
+	log.Printf("[DEBUG] deriveMachineKey: platform=%s, material=%q (len=%d)", runtime.GOOS, material, len(material))
 	hash := sha256.Sum256([]byte(material))
 	return hash[:]
 }
@@ -41,6 +43,7 @@ func readWindowsMachineGUID() string {
 	out, err := exec.Command("reg", "query", `HKLM\SOFTWARE\Microsoft\Cryptography`, "/v", "MachineGuid").Output()
 	if err != nil {
 		host, _ := os.Hostname()
+		log.Printf("[DEBUG] readWindowsMachineGUID: reg query failed (%v), fallback to hostname=%q", err, host)
 		return host
 	}
 	// 输出示例：
@@ -52,11 +55,14 @@ func readWindowsMachineGUID() string {
 		if strings.Contains(line, "REG_SZ") {
 			parts := strings.Fields(line)
 			if len(parts) >= 3 {
-				return parts[len(parts)-1]
+				guid := parts[len(parts)-1]
+				log.Printf("[DEBUG] readWindowsMachineGUID: extracted MachineGuid=%q", guid)
+				return guid
 			}
 		}
 	}
 	host, _ := os.Hostname()
+	log.Printf("[DEBUG] readWindowsMachineGUID: REG_SZ line not found in reg output (lines=%d), fallback to hostname=%q", len(lines), host)
 	return host
 }
 

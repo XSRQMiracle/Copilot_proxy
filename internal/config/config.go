@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -222,16 +223,24 @@ func LoadWithDecryptedTokens(path string) (Config, string, error) {
 	for i := range rawCfg.Auth.Accounts {
 		token := rawCfg.Auth.Accounts[i].GitHubToken
 		if token != "" && IsProbablyEncrypted(token) {
+			log.Printf("[DEBUG] LoadWithDecryptedTokens: attempting decrypt for account %q (token prefix: %s len=%d)",
+				rawCfg.Auth.Accounts[i].ID, token[:min(len(token), 20)], len(token))
 			plaintext, err := DecryptToken(token)
 			if err != nil {
 				// 解密失败：不清除现有配置，仅把内存中的 token 置空；
 				// 绝不保留密文字符串作为后续鉴权的凭据。
 				cfg.Auth.Accounts[i].GitHubToken = ""
+				log.Printf("[DEBUG] LoadWithDecryptedTokens: decrypt FAILED for account %q: %v",
+					rawCfg.Auth.Accounts[i].ID, err)
 				decryptErrs = append(decryptErrs, fmt.Errorf("account %q: %w", rawCfg.Auth.Accounts[i].ID, err))
 				continue
 			}
+			log.Printf("[DEBUG] LoadWithDecryptedTokens: decrypt OK for account %q (plaintext len=%d)",
+				rawCfg.Auth.Accounts[i].ID, len(plaintext))
 			cfg.Auth.Accounts[i].GitHubToken = plaintext
-		} else {
+		} else if token != "" && !IsProbablyEncrypted(token) {
+			log.Printf("[DEBUG] LoadWithDecryptedTokens: token for account %q is not encrypted, using as-is (prefix=%s len=%d)",
+				rawCfg.Auth.Accounts[i].ID, token[:min(len(token), 20)], len(token))
 			cfg.Auth.Accounts[i].GitHubToken = token
 		}
 	}

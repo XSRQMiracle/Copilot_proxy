@@ -33,7 +33,9 @@ func deriveMachineKey() []byte {
 		material = host
 	}
 
-	log.Printf("[DEBUG] deriveMachineKey: platform=%s, material=%q (len=%d)", runtime.GOOS, material, len(material))
+	if os.Getenv("COPILOT_PROXY_DEBUG") != "" {
+		log.Printf("[DEBUG] deriveMachineKey: platform=%s, material=%q (len=%d)", runtime.GOOS, material, len(material))
+	}
 	hash := sha256.Sum256([]byte(material))
 	return hash[:]
 }

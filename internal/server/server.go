@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"path"
 	"sort"
 	"strings"
@@ -126,6 +127,8 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		a.getConfig(w, r)
 	case r.URL.Path == "/api/config" && r.Method == http.MethodPut:
 		a.updateConfig(w, r)
+	case r.URL.Path == "/api/config/ui" && r.Method == http.MethodPatch:
+		a.patchUIConfig(w, r)
 	case r.URL.Path == "/api/fallback" && r.Method == http.MethodPut:
 		a.updateFallback(w, r)
 	case r.URL.Path == "/api/stats" && r.Method == http.MethodGet:
@@ -263,7 +266,63 @@ func (a *App) updateConfig(w http.ResponseWriter, r *http.Request) {
 	a.fallback.UpdateConfig(reloaded)
 	a.refreshFallbackChoice(r)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
-	a.triggerRestart()
+	if r.URL.Query().Get("restart") != "false" {
+		a.triggerRestart()
+	}
+}
+
+// patchUIConfig 轻量更新 ui.* 字段，不触发重启、不重新加载 token、不刷新 fallback。
+// 直接读磁盘 JSON → 改 ui 字段 → 写回，零额外开销。
+func (a *App) patchUIConfig(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		Theme    *string `json:"theme,omitempty"`
+		Language *string `json:"language,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	raw, err := os.ReadFile(a.configPath)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	var cfg config.Config
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	if payload.Theme != nil {
+		cfg.UI.Theme = *payload.Theme
+	}
+	if payload.Language != nil {
+		cfg.UI.Language = *payload.Language
+	}
+
+	if cfg.UI.Theme != "" && cfg.UI.Theme != "system" && cfg.UI.Theme != "light" && cfg.UI.Theme != "dark" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid ui.theme: %q", cfg.UI.Theme)})
+		return
+	}
+	if cfg.UI.Language != "" && cfg.UI.Language != "zh" && cfg.UI.Language != "en" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid ui.language: %q", cfg.UI.Language)})
+		return
+	}
+
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := os.WriteFile(a.configPath, append(out, '\n'), 0600); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	a.cfg.UI = cfg.UI
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
 }
 
 func (a *App) updateFallback(w http.ResponseWriter, r *http.Request) {

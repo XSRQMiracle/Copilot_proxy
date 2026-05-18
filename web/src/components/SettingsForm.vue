@@ -34,7 +34,7 @@
           </div>
           <div class="field-col field-toggles">
             <label>{{ t('settingsForm.language') }}</label>
-            <n-select v-model:value="form.ui.language" :options="languageOptions" size="small" class="field-select" />
+            <n-select :value="form.ui.language" :options="languageOptions" size="small" class="field-select" @update:value="handleLanguageChange" />
           </div>
         </div>
 
@@ -90,6 +90,17 @@ async function loadConfig() {
     message.error(err instanceof Error ? err.message : t('settingsForm.configLoadError'))
   } finally {
     loading.value = false
+  }
+}
+
+async function handleLanguageChange(value: 'zh' | 'en') {
+  if (!form.value) return
+  form.value.ui.language = value
+  appStore.language = value
+  try {
+    await configApi.patchUI({ language: value })
+  } catch {
+    // language is applied locally even if save fails
   }
 }
 

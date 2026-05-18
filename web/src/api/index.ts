@@ -182,11 +182,20 @@ export const deviceApi = {
 
 export const configApi = {
   get: () => api<Config>('/api/config', { headers: authHeaders() }),
-  save: (cfg: Config) => api<{ status: string }>('/api/config', {
-    method: 'PUT',
-    headers: authHeaders(),
-    body: JSON.stringify(cfg),
-  }),
+  save: (cfg: Config, skipRestart?: boolean) => {
+    const url = skipRestart ? '/api/config?restart=false' : '/api/config'
+    return api<{ status: string }>(url, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify(cfg),
+    })
+  },
+  patchUI: (data: { theme?: string; language?: string }) =>
+    api<{ status: string }>('/api/config/ui', {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify(data),
+    }),
 }
 
 export const statusApi = {

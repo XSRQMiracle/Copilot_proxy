@@ -156,7 +156,7 @@ export const messages: Record<Language, Record<string, Record<string, string>>> 
     },
     loginView: {
       title: '管理面板登录',
-      desc: '输入管理密码后即可查看账号、额度、模型与请求状态。',
+      desc: '输入管理密码后即可查看账号、额度、模型与请求状态',
       passwordLabel: '管理密码',
       passwordPlaceholder: '请输入 admin password',
       submit: '进入仪表盘',

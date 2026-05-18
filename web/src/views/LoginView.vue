@@ -1,6 +1,5 @@
 <template>
   <main class="login-shell">
-    <section class="login-orbit" aria-hidden="true" />
     <n-card class="login-card" :bordered="false">
       <n-space vertical :size="24">
         <header class="login-header">
@@ -89,19 +88,9 @@ async function handleLogin() {
   padding: var(--cp-space-8);
   overflow: hidden;
   background:
-    radial-gradient(circle at 20% 18%, var(--cp-color-primary-soft), transparent 32%),
-    radial-gradient(circle at 82% 72%, var(--cp-color-success-soft), transparent 30%),
+    radial-gradient(ellipse 80% 60% at 0% 20%, var(--cp-color-primary-soft) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 100% 80%, var(--cp-color-warning-soft) 0%, transparent 60%),
     var(--cp-color-bg);
-}
-
-.login-orbit {
-  position: absolute;
-  width: min(62vw, 760px);
-  aspect-ratio: 1;
-  border: 1px solid var(--cp-color-border);
-  border-radius: 50%;
-  transform: rotate(-18deg);
-  box-shadow: inset 0 0 0 var(--cp-space-8) rgba(255, 255, 255, 0.02);
 }
 
 .login-card {
@@ -134,5 +123,10 @@ async function handleLogin() {
 
 .login-error {
   margin-bottom: var(--cp-space-4);
+}
+
+/* Make password input border more visible in default state — match Naive UI hover green */
+.login-card :deep(.n-input:not(.n-input--focus) .n-input__border) {
+  border-color: var(--cp-color-success);
 }
 </style>

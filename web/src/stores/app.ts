@@ -72,10 +72,12 @@ export const useAppStore = defineStore('app', () => {
     applyTheme(next)
   }
 
-  // Restore persisted theme on init
+  // Restore persisted theme on init; always apply so login page gets the right theme
   const saved = localStorage.getItem('theme') as 'system' | 'light' | 'dark' | null
   if (saved && ['system', 'light', 'dark'].includes(saved)) {
     applyTheme(saved)
+  } else {
+    applyTheme('system')
   }
 
   return {

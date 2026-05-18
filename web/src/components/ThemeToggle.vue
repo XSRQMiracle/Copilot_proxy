@@ -2,7 +2,7 @@
   <button
     class="theme-cycle"
     :title="themeLabel"
-    @click="appStore.cycleTheme()"
+    @click="handleThemeClick"
   >
     <svg v-if="appStore.theme === 'system'" class="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
       <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
@@ -31,6 +31,7 @@
 import { computed } from 'vue'
 import { useI18n } from '../i18n'
 import { useAppStore } from '../stores/app'
+import { configApi } from '../api'
 
 const appStore = useAppStore()
 const { t } = useI18n()
@@ -39,6 +40,15 @@ const themeLabel = computed(() => {
   const labels = { system: t('themeToggle.system'), light: t('themeToggle.light'), dark: t('themeToggle.dark') }
   return labels[appStore.theme]
 })
+
+async function handleThemeClick() {
+  appStore.cycleTheme()
+  try {
+    await configApi.patchUI({ theme: appStore.theme })
+  } catch {
+    // theme is applied locally even if config save fails
+  }
+}
 </script>
 
 <style scoped>

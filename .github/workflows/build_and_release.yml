@@ -39,8 +39,9 @@ jobs:
 
       - name: Copy frontend for Go embed
         run: |
+          rm -rf internal/web/dist
           mkdir -p internal/web/dist
-          cp -r web/dist/* internal/web/dist/
+          cp -r web/dist/. internal/web/dist/
 
       - name: Build native binary
         run: |
@@ -94,10 +95,15 @@ jobs:
           fi
 
       - name: Create Release (attach artifacts)
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            artifacts/**
-          generate_release_notes: true
-          draft: false
-          prerelease: ${{ steps.check.outputs.prerelease }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          if [[ "$TAG" == *-* ]]; then
+            PRERELEASE="--prerelease"
+          else
+            PRERELEASE=""
+          fi
+          gh release create "$TAG" artifacts/**/* \
+            --generate-notes \
+            $PRERELEASE

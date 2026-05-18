@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"path"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -369,8 +370,8 @@ func (a *App) switchAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"active_account_id":  a.auth.ActiveAccountID(),
-		"github_token_ready": a.auth.HasGitHubToken(),
+		"active_account_id":   a.auth.ActiveAccountID(),
+		"github_token_ready":  a.auth.HasGitHubToken(),
 		"copilot_token_ready": a.auth.HasCopilotToken(),
 	})
 }
@@ -544,6 +545,7 @@ func (a *App) quota(w http.ResponseWriter, r *http.Request) {
 	}
 	results := make([]map[string]any, 0, len(endpoints))
 	var quota map[string]any
+	hadOK := false
 	for _, endpoint := range endpoints {
 		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, endpoint, nil)
 		if err != nil {
@@ -562,6 +564,9 @@ func (a *App) quota(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(resp.Body).Decode(&body)
 		resp.Body.Close()
 		results = append(results, map[string]any{"endpoint": endpoint, "status": resp.StatusCode, "body": body})
+		if resp.StatusCode == http.StatusOK {
+			hadOK = true
+		}
 		if quota == nil && resp.StatusCode == http.StatusOK {
 			if summary, ok := quotaSummaryFromBody(body); ok {
 				quota = summary
@@ -574,34 +579,33 @@ func (a *App) quota(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, quota)
 		return
 	}
+	reason := "quota_probe_failed"
+	message := "Unable to determine quota from GitHub probe endpoints. This is expected for some accounts and is not an error."
+	if hadOK {
+		reason = "quota_unrecognized"
+		message = "GitHub returned quota data, but this version could not recognize its shape. This can happen when GitHub changes Copilot quota fields."
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"available": false,
-		"reason":    "quota_probe_failed",
-		"message":   "Unable to determine quota from GitHub probe endpoints. This is expected for some accounts and is not an error.",
+		"reason":    reason,
+		"message":   message,
 		"probes":    results,
 	})
 }
 
 func quotaSummaryFromBody(body any) (map[string]any, bool) {
-	payload, ok := body.(map[string]any)
-	if !ok {
+	snapshots := findQuotaSnapshots(body)
+	if len(snapshots) == 0 {
 		return nil, false
 	}
-	snapshots, ok := payload["quota_snapshots"].(map[string]any)
-	if !ok || len(snapshots) == 0 {
-		return nil, false
-	}
-	keys := []string{"premium_interactions", "chat", "completions"}
+	keys := orderedQuotaKeys(snapshots)
 	parts := make([]string, 0, len(keys))
 	for _, key := range keys {
-		raw, ok := snapshots[key].(map[string]any)
-		if !ok {
+		raw := normalizeQuotaSnapshot(snapshots[key])
+		if len(raw) == 0 {
 			continue
 		}
 		remaining := numberAsString(raw["remaining"])
-		if remaining == "" {
-			remaining = numberAsString(raw["quota_remaining"])
-		}
 		entitlement := numberAsString(raw["entitlement"])
 		percent := numberAsString(raw["percent_remaining"])
 		unlimited, _ := raw["unlimited"].(bool)
@@ -609,10 +613,15 @@ func quotaSummaryFromBody(body any) (map[string]any, bool) {
 			parts = append(parts, key+": unlimited")
 			continue
 		}
-		if remaining == "" {
+		if remaining == "" && percent == "" && entitlement == "" {
 			continue
 		}
-		text := key + ": " + remaining + " remaining"
+		text := key + ": "
+		if remaining != "" {
+			text += remaining + " remaining"
+		} else {
+			text += "quota available"
+		}
 		if entitlement != "" && entitlement != "0" {
 			text += "/" + entitlement
 		}
@@ -620,15 +629,129 @@ func quotaSummaryFromBody(body any) (map[string]any, bool) {
 			text += " (" + percent + "%)"
 		}
 		parts = append(parts, text)
+		snapshots[key] = raw
 	}
 	if len(parts) == 0 {
 		return nil, false
 	}
 	return map[string]any{
 		"available": true,
-		"message":   strings.Join(parts, " \u00b7 "),
+		"message":   strings.Join(parts, " · "),
 		"snapshots": snapshots,
 	}, true
+}
+
+func findQuotaSnapshots(body any) map[string]any {
+	payload, ok := body.(map[string]any)
+	if !ok {
+		return nil
+	}
+	containerKeys := []string{"quota_snapshots", "quotaSnapshots", "usage", "quotas", "limited_user_quotas"}
+	for _, key := range containerKeys {
+		if snapshots := quotaMapFromValue(payload[key]); len(snapshots) > 0 {
+			return snapshots
+		}
+	}
+	for _, value := range payload {
+		child, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, key := range containerKeys {
+			if snapshots := quotaMapFromValue(child[key]); len(snapshots) > 0 {
+				return snapshots
+			}
+		}
+	}
+	if snapshots := quotaMapFromValue(payload); len(snapshots) > 0 {
+		return snapshots
+	}
+	return nil
+}
+
+func quotaMapFromValue(value any) map[string]any {
+	items, ok := value.(map[string]any)
+	if !ok || len(items) == 0 {
+		return nil
+	}
+	if isQuotaSnapshot(items) {
+		return map[string]any{"quota": normalizeQuotaSnapshot(items)}
+	}
+	result := make(map[string]any)
+	for key, item := range items {
+		if snapshot, ok := item.(map[string]any); ok && isQuotaSnapshot(snapshot) {
+			result[normalizeQuotaKey(key)] = normalizeQuotaSnapshot(snapshot)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func isQuotaSnapshot(snapshot map[string]any) bool {
+	for _, key := range []string{"remaining", "quota_remaining", "remaining_quota", "entitlement", "limit", "total", "quota", "used", "consumed", "percent_remaining", "remaining_percent", "unlimited"} {
+		if _, ok := snapshot[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeQuotaSnapshot(value any) map[string]any {
+	raw, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	normalized := make(map[string]any, len(raw))
+	for key, value := range raw {
+		normalized[key] = value
+	}
+	copyFirstQuotaField(normalized, raw, "remaining", "quota_remaining", "remaining_quota")
+	copyFirstQuotaField(normalized, raw, "entitlement", "limit", "total", "quota")
+	copyFirstQuotaField(normalized, raw, "percent_remaining", "remaining_percent")
+	copyFirstQuotaField(normalized, raw, "used", "consumed")
+	return normalized
+}
+
+func copyFirstQuotaField(dst, src map[string]any, canonical string, aliases ...string) {
+	if _, ok := dst[canonical]; ok {
+		return
+	}
+	for _, alias := range aliases {
+		if value, ok := src[alias]; ok {
+			dst[canonical] = value
+			return
+		}
+	}
+}
+
+func orderedQuotaKeys(snapshots map[string]any) []string {
+	known := []string{"premium_interactions", "chat", "completions"}
+	result := make([]string, 0, len(snapshots))
+	seen := make(map[string]bool, len(snapshots))
+	for _, key := range known {
+		if _, ok := snapshots[key]; ok {
+			result = append(result, key)
+			seen[key] = true
+		}
+	}
+	otherKeys := make([]string, 0, len(snapshots))
+	for key := range snapshots {
+		if !seen[key] {
+			otherKeys = append(otherKeys, key)
+		}
+	}
+	sort.Strings(otherKeys)
+	result = append(result, otherKeys...)
+	return result
+}
+
+func normalizeQuotaKey(key string) string {
+	key = strings.TrimSpace(key)
+	key = strings.ReplaceAll(key, "-", "_")
+	key = strings.ReplaceAll(key, " ", "_")
+	return strings.ToLower(key)
 }
 
 func numberAsString(value any) string {

@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/Open-Copilot-Proxy/Copilot_Proxy/internal/config"
 )
 
 type FallbackSelector struct {
+	mu         sync.RWMutex
 	cfg        config.Config
 	httpClient *http.Client
 	selected   string
@@ -24,18 +26,35 @@ func NewFallbackSelector(cfg config.Config, client *http.Client) *FallbackSelect
 }
 
 func (s *FallbackSelector) Selected() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.selected
 }
 
 func (s *FallbackSelector) Set(model string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.selected = model
 }
 
 func (s *FallbackSelector) UpdateConfig(cfg config.Config) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.cfg = cfg
+	s.selected = ""
 }
 
 func (s *FallbackSelector) Choose(ctx context.Context, modelsURL string, headers map[string]string) (string, error) {
+	s.mu.RLock()
+	if s.selected != "" {
+		selected := s.selected
+		s.mu.RUnlock()
+		return selected, nil
+	}
+	cfg := s.cfg
+	httpClient := s.httpClient
+	s.mu.RUnlock()
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, modelsURL, nil)
 	if err != nil {
 		return "", err
@@ -43,7 +62,7 @@ func (s *FallbackSelector) Choose(ctx context.Context, modelsURL string, headers
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := s.httpClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -56,30 +75,37 @@ func (s *FallbackSelector) Choose(ctx context.Context, modelsURL string, headers
 		return "", err
 	}
 	items := extractModelItems(payload)
-	usable := func(item map[string]any) bool {
-		return isEnabled(item) && isPickerEnabled(item) && supportsEndpoint(item, s.cfg.Fallback.RequiredEndpoint)
-	}
-	for _, pref := range s.cfg.Fallback.PreferredPrefixes {
-		for _, item := range items {
-			if id, _ := item["id"].(string); id == pref && usable(item) {
-				s.selected = id
-				return id, nil
-			}
-		}
-		for _, item := range items {
-			if matchesPrefix(item, pref) && usable(item) {
-				id, _ := item["id"].(string)
-				s.selected = id
-				return id, nil
-			}
-		}
-	}
+	usableItems := make([]map[string]any, 0, len(items))
 	for _, item := range items {
-		if usable(item) {
-			id, _ := item["id"].(string)
-			s.selected = id
-			return id, nil
+		if isEnabled(item) && isPickerEnabled(item) && supportsEndpoint(item, cfg.Fallback.RequiredEndpoint) {
+			usableItems = append(usableItems, item)
 		}
+	}
+	for _, pref := range cfg.Fallback.PreferredPrefixes {
+		for _, item := range usableItems {
+			if id, _ := item["id"].(string); id != "" && id == pref {
+				s.Set(id)
+				return id, nil
+			}
+		}
+		for _, item := range usableItems {
+			if matchesPrefix(item, pref) {
+				id, _ := item["id"].(string)
+				if id == "" {
+					continue
+				}
+				s.Set(id)
+				return id, nil
+			}
+		}
+	}
+	for _, item := range usableItems {
+		id, _ := item["id"].(string)
+		if id == "" {
+			continue
+		}
+		s.Set(id)
+		return id, nil
 	}
 	return "", nil
 }

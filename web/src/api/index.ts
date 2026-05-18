@@ -50,8 +50,15 @@ export interface ModelItem {
 export interface QuotaSnapshot {
   remaining?: number
   quota_remaining?: number
+  remaining_quota?: number
   entitlement?: number
+  limit?: number
+  total?: number
+  quota?: number
+  used?: number
+  consumed?: number
   percent_remaining?: number
+  remaining_percent?: number
   unlimited?: boolean
 }
 

@@ -32,24 +32,36 @@ const quotaLabelKeys: Record<string, string> = {
   premium_interactions: 'quotaDisplay.premiumInteractions',
   chat: 'quotaDisplay.chat',
   completions: 'quotaDisplay.completions',
+  premium_requests: 'quotaDisplay.premiumRequests',
+  inline_suggestions: 'quotaDisplay.inlineSuggestions',
+  chat_messages: 'quotaDisplay.chatMessages',
+  messages: 'quotaDisplay.messages',
 }
 
 const quota = computed(() => appStore.quota)
 
 const displayMessage = computed(() => {
-	const q = quota.value
-	if (!q) return t('quotaDisplay.quotaError')
-	if (q.reason === 'quota_probe_failed') return q.message || t('quotaDisplay.quotaError')
-	return q.message || t('quotaDisplay.noQuota')
+  const q = quota.value
+  if (!q) return t('quotaDisplay.quotaError')
+  if (q.reason === 'quota_probe_failed') return q.message || t('quotaDisplay.quotaError')
+  if (q.reason === 'quota_unrecognized') return q.message || t('quotaDisplay.quotaUnrecognized')
+  return q.message || t('quotaDisplay.noQuota')
 })
 
 function snapshotPercent(snapshot: QuotaSnapshot): number {
   if (snapshot.unlimited) return 100
-  if (typeof snapshot.percent_remaining === 'number') return clamp(snapshot.percent_remaining)
-  const remaining = snapshot.remaining ?? snapshot.quota_remaining ?? 0
-  const entitlement = snapshot.entitlement ?? 0
-  if (!entitlement) return 0
-  return clamp((remaining / entitlement) * 100)
+  const explicitPercent = snapshot.percent_remaining ?? snapshot.remaining_percent
+  if (typeof explicitPercent === 'number') return clamp(explicitPercent)
+  const remaining = snapshot.remaining ?? snapshot.quota_remaining ?? snapshot.remaining_quota
+  const total = snapshot.entitlement ?? snapshot.limit ?? snapshot.total ?? snapshot.quota
+  if (typeof remaining === 'number' && typeof total === 'number' && total > 0) {
+    return clamp((remaining / total) * 100)
+  }
+  const used = snapshot.used ?? snapshot.consumed
+  if (typeof used === 'number' && typeof total === 'number' && total > 0) {
+    return clamp(((total - used) / total) * 100)
+  }
+  return 0
 }
 
 function clamp(value: number): number {
@@ -62,19 +74,50 @@ function toneFor(percent: number): 'quota-good' | 'quota-warn' | 'quota-danger' 
   return 'quota-danger'
 }
 
+function generatedLabel(key: string): string {
+  return key
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function quotaLabel(key: string): string {
+  const labelKey = quotaLabelKeys[key]
+  return labelKey ? t(labelKey) : generatedLabel(key)
+}
+
+function quotaKeys(snapshots: Record<string, QuotaSnapshot>): string[] {
+  const known = Object.keys(quotaLabelKeys).filter((key) => snapshots[key])
+  const seen = new Set(known)
+  const unknown = Object.keys(snapshots).filter((key) => !seen.has(key))
+  return [...known, ...unknown]
+}
+
+function quotaNumbers(snapshot: QuotaSnapshot) {
+  const total = snapshot.entitlement ?? snapshot.limit ?? snapshot.total ?? snapshot.quota
+  const used = snapshot.used ?? snapshot.consumed
+  const remaining = snapshot.remaining ?? snapshot.quota_remaining ?? snapshot.remaining_quota
+    ?? (typeof total === 'number' && typeof used === 'number' ? total - used : undefined)
+  return { remaining, total, used }
+}
+
 const rows = computed(() => {
   const snapshots = appStore.quota?.snapshots ?? {}
-  return Object.keys(quotaLabelKeys)
+  return quotaKeys(snapshots)
     .map((key) => {
       const snapshot = snapshots[key]
       if (!snapshot) return null
       const percent = snapshotPercent(snapshot)
-      const remaining = snapshot.remaining ?? snapshot.quota_remaining ?? 0
-      const entitlement = snapshot.entitlement ?? 0
-      const label = t(quotaLabelKeys[key])
+      const { remaining, total, used } = quotaNumbers(snapshot)
+      const label = quotaLabel(key)
       const caption = snapshot.unlimited
         ? t('quotaDisplay.unlimited')
-        : t('quotaDisplay.remaining', { remaining, total: entitlement || '-', percent })
+        : t('quotaDisplay.remaining', {
+            remaining: remaining ?? '-',
+            total: total ?? (typeof used === 'number' ? `${t('quotaDisplay.used')} ${used}` : '-'),
+            percent,
+          })
       return {
         key,
         label,

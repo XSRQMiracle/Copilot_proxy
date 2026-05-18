@@ -169,6 +169,13 @@ func anthropicContentToText(content any) string {
 	}
 }
 
+func anthropicUsageFromOpenAIUsage(usage map[string]any) map[string]any {
+	return map[string]any{
+		"input_tokens":  numberValue(usage["prompt_tokens"]),
+		"output_tokens": numberValue(usage["completion_tokens"]),
+	}
+}
+
 func openAIToAnthropicResponse(oaiData map[string]any) map[string]any {
 	choice := firstChoice(oaiData)
 	message, _ := choice["message"].(map[string]any)
@@ -189,10 +196,7 @@ func openAIToAnthropicResponse(oaiData map[string]any) map[string]any {
 		"model":         stringValue(oaiData["model"]),
 		"stop_reason":   finish,
 		"stop_sequence": nil,
-		"usage": map[string]any{
-			"input_tokens":  numberValue(usage["prompt_tokens"]),
-			"output_tokens": numberValue(usage["completion_tokens"]),
-		},
+		"usage":         anthropicUsageFromOpenAIUsage(usage),
 	}
 }
 
@@ -288,19 +292,19 @@ func (h *Handler) serveAnthropicStream(w http.ResponseWriter, r *http.Request, t
 		if finish := stringValue(choice["finish_reason"]); finish != "" {
 			writeSSE(w, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 			// 从上游 OpenAI chunk 中提取 usage 而非硬编码为 0
-			usage := map[string]any{"input_tokens": streamRecord.PromptTokens, "output_tokens": streamRecord.CompletionTokens}
-			if usage["input_tokens"].(int64) == 0 && usage["output_tokens"].(int64) == 0 {
+			usage := map[string]any{"prompt_tokens": streamRecord.PromptTokens, "completion_tokens": streamRecord.CompletionTokens}
+			if streamRecord.PromptTokens == 0 && streamRecord.CompletionTokens == 0 {
 				// 如果流中没有 usage 数据，检查最后一个 chunk 是否有 usage
 				if chunkUsage, ok := chunk["usage"].(map[string]any); ok {
 					if pt, ct, _ := tokensFromUsage(chunkUsage); pt > 0 || ct > 0 {
-						usage = map[string]any{"input_tokens": pt, "output_tokens": ct}
+						usage = chunkUsage
 					}
 				}
 			}
 			writeSSE(w, "message_delta", map[string]any{
 				"type":  "message_delta",
 				"delta": map[string]any{"stop_reason": anthropicFinishReason(finish), "stop_sequence": nil},
-				"usage": usage,
+				"usage": anthropicUsageFromOpenAIUsage(usage),
 			})
 			writeSSE(w, "message_stop", map[string]any{"type": "message_stop"})
 			flush(flusher)

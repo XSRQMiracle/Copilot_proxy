@@ -562,9 +562,6 @@ func enrichModelAvailability(payload any, requiredEndpoint string) any {
 }
 
 func modelAvailable(model map[string]any, requiredEndpoint string) bool {
-	if id, _ := model["id"].(string); strings.HasPrefix(id, "claude-opus-") {
-		return false
-	}
 	if enabled, ok := model["model_picker_enabled"].(bool); ok && !enabled {
 		return false
 	}

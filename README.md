@@ -40,6 +40,14 @@ Or use the Makefile:
 make build    # builds frontend + Go binary in one step
 ```
 
+On macOS / Linux:
+
+```
+go build -o copilot-proxy ./cmd/copilot-proxy
+chmod +x ./copilot-proxy
+./copilot-proxy
+```
+
 On Windows:
 
 ```
@@ -84,6 +92,12 @@ copilot-proxy --config <path>  # Use custom config file
 4. Copy the verification code and open the provided GitHub URL
 5. After authorization, the account appears and is ready to use
 6. Optionally set an **管理密码** (admin password) in config to protect the WebUI
+
+> **macOS and Linux users**: If you downloaded a pre-built binary from Releases, you may need to grant execute permission first:
+> ```bash
+> chmod +x ./copilot-proxy
+> ```
+> If macOS displays "copilot-proxy cannot be opened because the developer cannot be verified", go to **System Settings > Privacy & Security** and click **Open Anyway**.
 
 ### Headless Linux
 

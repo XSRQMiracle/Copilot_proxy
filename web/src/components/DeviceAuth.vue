@@ -103,6 +103,12 @@ async function startFlow() {
     const nextFlow = await deviceApi.start()
     if (!isCurrentRun(runId)) return
     flow.value = nextFlow
+    try {
+      await navigator.clipboard.writeText(flow.value.user_code)
+      // Auto-copy succeeded - no toast needed to avoid being annoying
+    } catch {
+      message.info(t('deviceAuth.copyFail'))
+    }
     pollIntervalSeconds = Math.max(1, flow.value.interval || 5)
     startedAt.value = Date.now()
     statusText.value = t('deviceAuth.waitConfirm')

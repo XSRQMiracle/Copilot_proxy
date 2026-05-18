@@ -40,6 +40,14 @@ go build -o copilot-proxy ./cmd/copilot-proxy
 make build
 ```
 
+macOS / Linux：
+
+```
+go build -o copilot-proxy ./cmd/copilot-proxy
+chmod +x ./copilot-proxy
+./copilot-proxy
+```
+
 Windows 上：
 
 ```
@@ -84,6 +92,12 @@ copilot-proxy --config <path>  # 使用自定义配置文件
 4. 复制验证码并打开 GitHub 授权页面
 5. 授权完成后账号自动生效
 6. 如需保护 WebUI，在配置中设置 **管理密码**
+
+> **macOS 和 Linux 用户**：如果从 Releases 下载预编译二进制，可能需要先赋予可执行权限：
+> ```bash
+> chmod +x ./copilot-proxy
+> ```
+> 如果 macOS 提示"无法打开，未验证开发者"，请前往**系统设置 > 隐私与安全性**，点击**仍要打开**。
 
 ### 无头 Linux
 

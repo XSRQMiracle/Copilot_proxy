@@ -77,6 +77,7 @@ export const messages: Record<Language, Record<string, Record<string, string>>> 
       completions: '补全额度',
       unlimited: '无限额度',
       remaining: '{remaining}/{total} · {percent}% 剩余',
+      quotaError: '额度接口暂不可用',
     },
     requestTable: {
       time: '时间',
@@ -127,7 +128,7 @@ export const messages: Record<Language, Record<string, Record<string, string>>> 
       dark: '深色模式',
     },
     usageChart: {
-      requests: '{count} 次 · {tokens} tok',
+      requests: '{count} 次 · {tokens} token',
       empty: '暂无请求数据 — 代理收到请求后自动显示各模型调用分布',
     },
     connectionBanner: {
@@ -234,6 +235,7 @@ export const messages: Record<Language, Record<string, Record<string, string>>> 
       completions: 'Completions Quota',
       unlimited: 'Unlimited',
       remaining: '{remaining}/{total} · {percent}% remaining',
+      quotaError: 'Quota API temporarily unavailable',
     },
     requestTable: {
       time: 'Time',
@@ -284,7 +286,7 @@ export const messages: Record<Language, Record<string, Record<string, string>>> 
       dark: 'Dark',
     },
     usageChart: {
-      requests: '{count} req · {tokens} tok',
+      requests: '{count} req · {tokens} token',
       empty: 'No request data — distribution appears after the proxy handles requests',
     },
     connectionBanner: {

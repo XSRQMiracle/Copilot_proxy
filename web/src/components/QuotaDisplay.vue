@@ -39,7 +39,7 @@ const quota = computed(() => appStore.quota)
 const displayMessage = computed(() => {
 	const q = quota.value
 	if (!q) return t('quotaDisplay.quotaError')
-	if (q.reason === 'quota_probe_failed') return t('quotaDisplay.quotaError')
+	if (q.reason === 'quota_probe_failed') return q.message || t('quotaDisplay.quotaError')
 	return q.message || t('quotaDisplay.noQuota')
 })
 

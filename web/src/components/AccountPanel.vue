@@ -54,6 +54,7 @@ import { useAppStore } from '../stores/app'
 
 const emit = defineEmits<{
   (event: 'start-auth'): void
+  (event: 'switched'): void
 }>()
 
 const appStore = useAppStore()
@@ -92,6 +93,7 @@ async function switchAccount(id: string) {
     if (appStore.config) appStore.config.auth.active_account_id = result.active_account_id
     appStore.status = await statusApi.get()
     message.success(t('accountPanel.switchSuccess'))
+    emit('switched')
   } catch (err) {
     message.error(err instanceof Error ? err.message : t('accountPanel.switchFail'))
   } finally {

@@ -33,7 +33,7 @@
             <button class="dash-card-btn" @click="showDeviceAuth = true">+ GitHub</button>
           </div>
           <div class="dash-card-body">
-            <AccountPanel ref="accountPanelRef" @start-auth="showDeviceAuth = true" />
+            <AccountPanel ref="accountPanelRef" @start-auth="showDeviceAuth = true" @switched="refreshAll" />
           </div>
         </div>
 

@@ -241,7 +241,9 @@ func (m *Manager) refreshCopilotTokenWith(ctx context.Context, githubToken strin
 	for k, v := range m.cfg.DefaultHeaders() {
 		req.Header.Set(k, v)
 	}
-	req.Header.Set("Authorization", "Bearer "+githubToken)
+	// 注意：GitHub App 的 token（ghu_`前缀）必须用 `token` auth scheme，
+	// 不能用 `Bearer`。OAuth App 的 token（gho_`前缀）和 PAT（ghp_`）同理。
+	req.Header.Set("Authorization", "token "+githubToken)
 
 	resp, err := m.httpClient.Do(req)
 	if err != nil {

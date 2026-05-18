@@ -182,6 +182,8 @@ func Save(path string, cfg Config) error {
 
 	// 加密所有账号的 github_token
 	encrypted := cfg
+	// 深拷贝 Accounts 切片，避免加密 ciphertext 回写时修改调用者 cfg 的共享底层数组
+	encrypted.Auth.Accounts = append([]AccountConfig{}, encrypted.Auth.Accounts...)
 	for i := range encrypted.Auth.Accounts {
 		token := encrypted.Auth.Accounts[i].GitHubToken
 		if token != "" && !IsProbablyEncrypted(token) {

@@ -200,7 +200,9 @@ func (a *App) getConfig(w http.ResponseWriter, r *http.Request) {
 
 // redactConfigSecrets 返回配置的深拷贝，清除所有账号的 GitHubToken，
 // 避免明文凭据通过 API 泄漏。
+// 注意：必须先深拷贝 Accounts 切片，否则会修改调用者 cfg 的共享底层数组。
 func redactConfigSecrets(cfg config.Config) config.Config {
+	cfg.Auth.Accounts = append([]config.AccountConfig{}, cfg.Auth.Accounts...)
 	for i := range cfg.Auth.Accounts {
 		cfg.Auth.Accounts[i].GitHubToken = ""
 	}

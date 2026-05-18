@@ -167,17 +167,28 @@ func serve(cfg config.Config, configPath string, logger *log.Logger) error {
 		_ = httpServer.Shutdown(shutdownCtx)
 	}()
 
-	// Retry listener to handle brief TIME_WAIT / orphan process on restart
+	// Retry listener to handle brief TIME_WAIT / orphan process on restart.
+	// When COPILOT_PROXY_RESTARTING=1 (spawned by a restarting instance),
+	// retry up to 30 times (15 seconds) to give the old process time to release the port.
 	var ln net.Listener
 	{
 		var err error
-		for i := range 3 {
+		maxAttempts := 3
+		if os.Getenv("COPILOT_PROXY_RESTARTING") == "1" {
+			maxAttempts = 30
+		}
+		for i := range maxAttempts {
 			ln, err = net.Listen("tcp", httpServer.Addr)
 			if err == nil {
+				if i > 0 && os.Getenv("COPILOT_PROXY_RESTARTING") == "1" {
+					logger.Printf("[~] Port acquired after %d attempts", i+1)
+				}
 				break
 			}
-			logger.Printf("[~] Port %s not available (attempt %d/3), retrying...", cfg.PublicBaseURL(), i+1)
-			time.Sleep(time.Duration(i+1) * 500 * time.Millisecond)
+			if i == 0 || i == maxAttempts-1 || (i+1)%10 == 0 {
+				logger.Printf("[~] Port %s not available (attempt %d/%d), retrying...", cfg.PublicBaseURL(), i+1, maxAttempts)
+			}
+			time.Sleep(500 * time.Millisecond)
 		}
 		if err != nil {
 			return fmt.Errorf("listen %s after retries: %w", httpServer.Addr, err)
@@ -218,9 +229,34 @@ func serve(cfg config.Config, configPath string, logger *log.Logger) error {
 			logger.Printf("[!] restart: %v", err)
 			return nil
 		}
-		logger.Println("[+] New process started, exiting")
+
+		// Wait for new process to bind the port before exiting the old process.
+		// This prevents port from going unclaimed, and ensures Ctrl+C correctly
+		// targets the (still-running) parent process.
+		logger.Println("[~] Waiting for new process to take over port...")
+		if waitErr := waitForPort(httpServer.Addr, 30, 500*time.Millisecond); waitErr != nil {
+			logger.Printf("[!] restart: new process may not have bound port: %v", waitErr)
+		} else {
+			logger.Println("[+] New process is listening, exiting")
+		}
 		return nil
 	}
+}
+
+// waitForPort 轮询 TCP 端口，直到成功建立连接（表示新进程已开始监听）或超时。
+// 用 Dial 而非 Listen 探测，避免与目标进程竞争端口绑定。
+func waitForPort(addr string, attempts int, delay time.Duration) error {
+	var lastErr error
+	for range attempts {
+		conn, err := net.DialTimeout("tcp", addr, delay)
+		if err == nil {
+			conn.Close()
+			return nil
+		}
+		lastErr = err
+		time.Sleep(delay)
+	}
+	return fmt.Errorf("port %s not accepting connections after %d attempts, last err: %w", addr, attempts, lastErr)
 }
 
 func login(cfg config.Config, logger *log.Logger) error {

@@ -43,6 +43,9 @@ jobs:
           mkdir -p internal/web/dist
           cp -r web/dist/. internal/web/dist/
 
+      - name: Clear Go build cache (force re-embed frontend assets)
+        run: go clean -cache
+
       - name: Build native binary
         run: |
           mkdir -p out

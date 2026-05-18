@@ -154,7 +154,7 @@ A template is available at `config.example.json`
 
 By default, the WebUI is protected with password `admin` (set in `security.admin_password`)
 Change it to a secure password in `config.json` or via the WebUI settings page
-The password is hashed and stored in the config file
+The password is stored in plaintext in the config file
 If no password is set, the WebUI is open to anyone on the local network — set this for production use
 
 > **Security note**: The default password `admin` is provided for convenience.
@@ -240,8 +240,10 @@ internal/
 │   └── stats.go            # Request statistics (rolling window)
 ├── server/                 # HTTP server, routing, SSE handling, admin auth
 └── web/
-    ├── assets.go            # go:embed embedded frontend
-    └── middleware.go        # WebUI login middleware
+    ├── assets.go            # go:embed embedded frontend dist
+    ├── favicon.go           # Favicon data (go:embed)
+    ├── favicon.png          # Favicon image
+    └── fs.go                # Frontend static file serving (disk fallback)
 web/                         # Vue 3 + TypeScript + Naive UI frontend
 ```
 

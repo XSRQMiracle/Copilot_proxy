@@ -153,7 +153,7 @@ docker build -t copilot-proxy .
 ### WebUI 访问控制
 
 设置 `security.admin_password` 后，WebUI 需要登录才能访问
-密码哈希后存储在配置文件中
+密码明文存储在配置文件中
 若未设置密码，局域网内可任意访问 WebUI —— 生产环境建议配置密码
 
 ## 兼容 API
@@ -236,8 +236,10 @@ internal/
 │   └── stats.go            # 请求统计（滚动窗口）
 ├── server/                 # HTTP 服务器、路由、SSE 处理、管理认证
 └── web/
-    ├── assets.go           # go:embed 前端静态资源
-    └── middleware.go       # WebUI 登录中间件
+    ├── assets.go            # go:embed 前端静态资源 dist
+    ├── favicon.go           # Favicon 图标数据 (go:embed)
+    ├── favicon.png          # Favicon 图标文件
+    └── fs.go                # 前端静态文件服务（磁盘优先，回退到 embed）
 web/                         # Vue 3 + TypeScript + Naive UI 前端
 ```
 

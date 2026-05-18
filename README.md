@@ -244,22 +244,28 @@ No system keyring, no third-party credential managers, no plaintext token files
 ## Architecture
 
 ```
-cmd/copilot-proxy/          # Entry point
+cmd/copilot-proxy/          # Entry point (CLI subcommands, signal handling, server start)
 internal/
-├── config/                 # Config load/save, AES-GCM crypto, machine fingerprint
-├── auth/                   # Account manager, GitHub device OAuth flow
+├── config/
+│   ├── config.go            # Config load/save/validation (defaults, hot-reload)
+│   ├── config_test.go       # Config tests
+│   └── crypto.go            # AES-GCM encrypt/decrypt (machine-fingerprint key)
+├── auth/
+│   ├── auth.go              # Account manager (multi-account CRUD + token lifecycle)
+│   └── oauth.go             # GitHub Device Code Flow client
 ├── proxy/
-│   ├── proxy.go            # OpenAI-compatible request forwarding
-│   ├── anthropic.go        # Anthropic protocol conversion
-│   ├── gemini.go           # Gemini protocol conversion
-│   ├── fallback.go         # Fallback model selection
-│   └── stats.go            # Request statistics (rolling window)
-├── server/                 # HTTP server, routing, SSE handling, admin auth
+│   ├── proxy.go             # OpenAI-compatible forwarding + main handler
+│   ├── anthropic.go         # Anthropic Messages API protocol conversion
+│   ├── gemini.go            # Gemini API protocol conversion
+│   ├── fallback.go          # Fallback model selector
+│   ├── compat.go            # Protocol compatibility utilities
+│   └── stats.go             # Request statistics (ring buffer)
+├── server/                  # HTTP server, routing, SSE, admin auth, WebUI API
 └── web/
     ├── assets.go            # go:embed embedded frontend dist
     ├── favicon.go           # Favicon data (go:embed)
     ├── favicon.png          # Favicon image
-    └── fs.go                # Frontend static file serving (disk fallback)
+    └── fs.go                # Frontend static file serving (disk/embed dual mode)
 web/                         # Vue 3 + TypeScript + Naive UI frontend
 ```
 

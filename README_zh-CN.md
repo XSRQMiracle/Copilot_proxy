@@ -238,22 +238,28 @@ GitHub Token 在写入 `config.json` 前会使用 **AES-256-GCM** 加密
 ## 项目结构
 
 ```
-cmd/copilot-proxy/          # 入口
+cmd/copilot-proxy/          # 入口（CLI 子命令、信号处理、服务器启动）
 internal/
-├── config/                 # 配置加载/保存、AES-GCM 加密、机器指纹
-├── auth/                   # 账号管理、GitHub OAuth 设备授权
+├── config/
+│   ├── config.go            # 配置加载/保存/验证（默认值、热重载）
+│   ├── config_test.go       # 配置测试
+│   └── crypto.go            # AES-GCM 加密/解密（机器指纹派生密钥）
+├── auth/
+│   ├── auth.go              # 账号管理器（多账号增删改查 + Token 生命周期）
+│   └── oauth.go             # GitHub Device Code Flow 客户端
 ├── proxy/
-│   ├── proxy.go            # OpenAI 兼容请求转发
-│   ├── anthropic.go        # Anthropic 协议转换
-│   ├── gemini.go           # Gemini 协议转换
-│   ├── fallback.go         # 回退模型选择
-│   └── stats.go            # 请求统计（滚动窗口）
-├── server/                 # HTTP 服务器、路由、SSE 处理、管理认证
+│   ├── proxy.go             # OpenAI 兼容请求转发 + 主处理器
+│   ├── anthropic.go         # Anthropic Messages API 协议转换
+│   ├── gemini.go            # Gemini API 协议转换
+│   ├── fallback.go          # 回退模型选择器
+│   ├── compat.go            # 协议兼容工具函数
+│   └── stats.go             # 请求统计（环形缓冲区）
+├── server/                  # HTTP 服务器、路由、SSE、管理认证、WebUI API
 └── web/
     ├── assets.go            # go:embed 前端静态资源 dist
     ├── favicon.go           # Favicon 图标数据 (go:embed)
     ├── favicon.png          # Favicon 图标文件
-    └── fs.go                # 前端静态文件服务（磁盘优先，回退到 embed）
+    └── fs.go                # 前端静态文件服务（磁盘优先，回退 embed）
 web/                         # Vue 3 + TypeScript + Naive UI 前端
 ```
 

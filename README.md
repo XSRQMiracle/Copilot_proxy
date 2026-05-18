@@ -108,7 +108,9 @@ npm run build
 cd ..
 
 # 2. Copy frontend to embed directory
-cp -r web/dist/* internal/web/dist/
+rm -rf internal/web/dist
+mkdir -p internal/web/dist
+cp -r web/dist/. internal/web/dist/
 
 # 3. Build Go binary (embeds frontend automatically)
 go build -ldflags="-s -w" -o copilot-proxy ./cmd/copilot-proxy

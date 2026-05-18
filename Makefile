@@ -9,7 +9,9 @@ frontend:
 	cd web && npm ci && npm run build
 
 internal/web/dist: frontend
-	cp -r web/dist/* internal/web/dist/
+	rm -rf internal/web/dist
+	mkdir -p internal/web/dist
+	cp -r web/dist/. internal/web/dist/
 
 build: internal/web/dist
 	$(GO_BUILD) -o $(BINARY_NAME) ./cmd/copilot-proxy

@@ -598,6 +598,18 @@ func quotaSummaryFromBody(body any) (map[string]any, bool) {
 	if len(snapshots) == 0 {
 		return nil, false
 	}
+	// Enrich with monthly_quotas as entitlement for flat quota maps (Free accounts)
+	if payload, ok := body.(map[string]any); ok {
+		if monthly, ok := payload["monthly_quotas"].(map[string]any); ok {
+			for key, val := range monthly {
+				if snapshot, ok := snapshots[key].(map[string]any); ok {
+					if _, hasEnt := snapshot["entitlement"]; !hasEnt {
+						snapshot["entitlement"] = val
+					}
+				}
+			}
+		}
+	}
 	keys := orderedQuotaKeys(snapshots)
 	parts := make([]string, 0, len(keys))
 	for _, key := range keys {
@@ -683,6 +695,13 @@ func quotaMapFromValue(value any) map[string]any {
 			result[normalizeQuotaKey(key)] = normalizeQuotaSnapshot(snapshot)
 		}
 	}
+	if len(result) == 0 && isFlatQuotaMap(items) {
+		for key, val := range items {
+			if num, ok := val.(float64); ok {
+				result[normalizeQuotaKey(key)] = map[string]any{"remaining": num}
+			}
+		}
+	}
 	if len(result) == 0 {
 		return nil
 	}
@@ -724,6 +743,20 @@ func copyFirstQuotaField(dst, src map[string]any, canonical string, aliases ...s
 			return
 		}
 	}
+}
+
+func isFlatQuotaMap(items map[string]any) bool {
+	if len(items) == 0 {
+		return false
+	}
+	for _, val := range items {
+		switch val.(type) {
+		case float64:
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func orderedQuotaKeys(snapshots map[string]any) []string {

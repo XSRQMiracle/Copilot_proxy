@@ -3,6 +3,7 @@ package web
 import (
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -22,6 +23,16 @@ var (
 func DistFS() (fs.FS, string, error) {
 	distOnce.Do(func() {
 		distFS, distSource, distFromDisk, distErr = resolveDistFS()
+		if distErr == nil {
+			log.Printf("[web] serving UI from %s (disk=%v)", distSource, distFromDisk)
+			log.Printf("[web] embedded file list:")
+			fs.WalkDir(distFS, ".", func(path string, d fs.DirEntry, err error) error {
+				if err == nil && !d.IsDir() {
+					log.Printf("  → %s", path)
+				}
+				return nil
+			})
+		}
 	})
 	return distFS, distSource, distErr
 }

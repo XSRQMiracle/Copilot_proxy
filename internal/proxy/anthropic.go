@@ -77,13 +77,6 @@ func (h *Handler) ServeAnthropicMessages(w http.ResponseWriter, r *http.Request)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusBadRequest {
-		if retry, retryErr := h.tryFallback(r.Context(), http.MethodPost, copilotURL, token, "application/json", body, resp); retryErr == nil && retry != nil {
-			resp.Body.Close()
-			resp = retry
-			defer resp.Body.Close()
-		}
-	}
 	if resp.StatusCode != http.StatusOK {
 		body := readErrorPreview(resp)
 		anthropicError(w, resp.StatusCode, body)
@@ -218,13 +211,6 @@ func (h *Handler) serveAnthropicStream(w http.ResponseWriter, r *http.Request, t
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusBadRequest {
-		if retry, retryErr := h.tryFallback(r.Context(), http.MethodPost, copilotURL, token, "application/json", body, resp); retryErr == nil && retry != nil {
-			resp.Body.Close()
-			resp = retry
-			defer resp.Body.Close()
-		}
-	}
 	if resp.StatusCode != http.StatusOK {
 		anthropicError(w, resp.StatusCode, readErrorPreview(resp))
 		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: resp.StatusCode, Error: "upstream error"})

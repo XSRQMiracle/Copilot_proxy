@@ -19,7 +19,6 @@ export interface Config {
   github: Record<string, string>
   copilot: { api_base: string; integration_id: string }
   headers: Record<string, string>
-  fallback: { preferred_prefixes: string[]; required_endpoint: string }
   security: { api_key: string; admin_password?: string }
   runtime: { proxy_disabled: boolean }
   auth: { active_account_id: string; accounts: Account[] }
@@ -30,21 +29,10 @@ export interface StatusResponse {
   github_token_ready: boolean
   copilot_token_ready: boolean
   copilot_expires_at: string | null
-  fallback_model: string
   config_path: string
   base_url: string
   service_enabled: boolean
   active_account: string
-}
-
-export interface ModelItem {
-  id: string
-  name?: string
-  vendor?: string
-  available?: boolean
-  policy?: { state?: string }
-  model_picker_enabled?: boolean
-  supported_endpoints?: string[]
 }
 
 export interface QuotaSnapshot {
@@ -203,20 +191,8 @@ export const statsApi = {
   get: () => api<StatsResponse>('/api/stats', { headers: authHeaders() }),
 }
 
-export const modelsApi = {
-  list: () => api<{ data?: ModelItem[] }>('/api/models', { headers: authHeaders() }),
-}
-
 export const quotaApi = {
   get: () => api<QuotaResponse>('/api/quota', { headers: authHeaders() }),
-}
-
-export const fallbackApi = {
-  update: (prefixes: string[]) => api<{ status: string; preferred_prefixes: string[]; fallback_model?: string }>('/api/fallback', {
-    method: 'PUT',
-    headers: authHeaders(),
-    body: JSON.stringify({ preferred_prefixes: prefixes }),
-  }),
 }
 
 export const serviceApi = {

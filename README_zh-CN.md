@@ -13,7 +13,6 @@ Go + Vue 3 实现，单二进制嵌入 WebUI，零外部运行时依赖
 - 单文件二进制 —— Go 后端通过 `go:embed` 嵌入 Vue 3 + Naive UI 前端
 - Token 使用 AES-256-GCM 加密存储，密钥从机器硬件指纹派生，无需系统 keyring
 - 多账号支持：WebUI 内添加和切换多个 GitHub 账号
-- 可配置的模型回退策略，WebUI 提供图形化选择器
 - 请求统计和实时额度展示
 - 完善的 SSE 流式响应支持
 - 跨平台：Windows、macOS、Linux（含无头服务器）
@@ -159,7 +158,6 @@ docker build -t copilot-proxy .
 - `copilot.api_base` — GitHub Copilot API 地址
 - `auth.accounts` — GitHub 账号列表（Token 加密存储，非明文）
 - `auth.active_account_id` — 当前使用的账号 ID
-- `fallback.preferred_prefixes` — 回退模型优先级列表
 - `runtime.proxy_disabled` — 暂停兼容 API 服务的开关
 - `ui.language` — `zh` 或 `en`
 - `ui.theme` — `system`、`light` 或 `dark`
@@ -202,7 +200,7 @@ curl "http://localhost:15432/v1beta/models/gemini-pro:generateContent?key=dummy"
 ## API 参考
 
 - `GET /` — 健康检查
-- `GET /fallback` — 当前回退模型信息
+- `GET /v1/models` — 列出可用模型
 - `POST /v1/chat/completions` — OpenAI 聊天补全
 - `POST /v1/messages` — Anthropic Messages API
 - `POST /v1beta/models/{model}:generateContent` — Gemini generateContent
@@ -251,7 +249,6 @@ internal/
 │   ├── proxy.go             # OpenAI 兼容请求转发 + 主处理器
 │   ├── anthropic.go         # Anthropic Messages API 协议转换
 │   ├── gemini.go            # Gemini API 协议转换
-│   ├── fallback.go          # 回退模型选择器
 │   ├── compat.go            # 协议兼容工具函数
 │   └── stats.go             # 请求统计（环形缓冲区）
 ├── server/                  # HTTP 服务器、路由、SSE、管理认证、WebUI API

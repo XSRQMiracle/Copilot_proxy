@@ -13,7 +13,6 @@ Built with Go + Vue 3, single binary with embedded WebUI, zero external runtime 
 - Single binary — Go backend with embedded Vue 3 + Naive UI frontend via `go:embed`
 - AES-GCM encrypted token storage using machine-specific key derivation, no system keyring required
 - Multi-account support — add and switch between multiple GitHub accounts via WebUI
-- Configurable model fallback with graphical picker in WebUI
 - Request statistics and real-time quota display
 - Streaming support with proper SSE handling
 - Cross-platform: Windows, macOS, Linux (including headless servers)
@@ -161,7 +160,6 @@ A template is available at `config.example.json`
 - `copilot.api_base` — GitHub Copilot API base URL
 - `auth.accounts` — list of GitHub accounts (token is stored encrypted, not in plain text)
 - `auth.active_account_id` — currently active account
-- `fallback.preferred_prefixes` — ordered list of model prefixes for fallback selection
 - `runtime.proxy_disabled` — toggle to pause compatible API requests
 - `ui.language` — `zh` or `en`
 - `ui.theme` — `system`, `light`, or `dark`
@@ -208,7 +206,7 @@ curl "http://localhost:15432/v1beta/models/gemini-pro:generateContent?key=dummy"
 ## API Reference
 
 - `GET /` — health check
-- `GET /fallback` — current fallback model info
+- `GET /v1/models` — list available models
 - `POST /v1/chat/completions` — OpenAI chat completions
 - `POST /v1/messages` — Anthropic Messages API
 - `POST /v1beta/models/{model}:generateContent` — Gemini generateContent
@@ -257,7 +255,6 @@ internal/
 │   ├── proxy.go             # OpenAI-compatible forwarding + main handler
 │   ├── anthropic.go         # Anthropic Messages API protocol conversion
 │   ├── gemini.go            # Gemini API protocol conversion
-│   ├── fallback.go          # Fallback model selector
 │   ├── compat.go            # Protocol compatibility utilities
 │   └── stats.go             # Request statistics (ring buffer)
 ├── server/                  # HTTP server, routing, SSE, admin auth, WebUI API

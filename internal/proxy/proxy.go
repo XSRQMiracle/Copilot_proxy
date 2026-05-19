@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -27,23 +26,22 @@ var excludedResponseHeaders = map[string]struct{}{
 }
 
 type Handler struct {
-	mu       sync.RWMutex
-	cfg      config.Config
-	auth     *auth.Manager
-	fallback *FallbackSelector
-	client   *http.Client
-	logger   *log.Logger
-	stats    *Stats
+	mu     sync.RWMutex
+	cfg    config.Config
+	auth   *auth.Manager
+	client *http.Client
+	logger *log.Logger
+	stats  *Stats
 }
 
-func NewHandler(cfg config.Config, authManager *auth.Manager, fallback *FallbackSelector, client *http.Client, logger *log.Logger, stats *Stats) *Handler {
+func NewHandler(cfg config.Config, authManager *auth.Manager, client *http.Client, logger *log.Logger, stats *Stats) *Handler {
 	if client == nil {
 		client = http.DefaultClient
 	}
 	if stats == nil {
 		stats = NewStats(200)
 	}
-	return &Handler{cfg: cfg, auth: authManager, fallback: fallback, client: client, logger: logger, stats: stats}
+	return &Handler{cfg: cfg, auth: authManager, client: client, logger: logger, stats: stats}
 }
 
 func (h *Handler) UpdateConfig(cfg config.Config) {
@@ -98,15 +96,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusBadRequest {
-		retryResp, retryErr := h.tryFallback(r.Context(), r.Method, upstreamURL, token, r.Header.Get("Content-Type"), body, resp)
-		if retryErr == nil && retryResp != nil {
-			resp.Body.Close()
-			resp = retryResp
-			defer resp.Body.Close()
-		}
-	}
 
 	h.copyAndRecordResponse(w, resp, RequestRecord{Time: start, Protocol: "openai", Method: r.Method, Path: r.URL.Path, Model: model, DurationMs: time.Since(start).Milliseconds()})
 }
@@ -192,66 +181,6 @@ func ensureStreamUsage(payload map[string]any) {
 	}
 	options["include_usage"] = true
 	payload["stream_options"] = options
-}
-
-func (h *Handler) tryFallback(ctx context.Context, method, upstreamURL, token, contentType string, body []byte, first *http.Response) (*http.Response, error) {
-	snapshot, err := io.ReadAll(first.Body)
-	if err != nil {
-		return nil, err
-	}
-	first.Body = io.NopCloser(bytes.NewReader(snapshot))
-	if !isModelNotSupported(first.StatusCode, snapshot) {
-		return nil, errors.New("not a model_not_supported response")
-	}
-
-	var requestBody map[string]any
-	if err := json.Unmarshal(body, &requestBody); err != nil {
-		return nil, err
-	}
-	requestedModel, _ := requestBody["model"].(string)
-	selected := h.fallback.Selected()
-	if selected == "" {
-		headers := h.defaultHeaders()
-		headers["Authorization"] = "Bearer " + token
-		var err error
-		selected, err = h.fallback.Choose(ctx, strings.TrimRight(h.copilotAPIBase(), "/")+"/models", headers)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if selected == "" {
-		return nil, errors.New("no fallback model available")
-	}
-	requestBody["model"] = selected
-	retryBody, err := json.Marshal(requestBody)
-	if err != nil {
-		return nil, err
-	}
-	if h.logger != nil {
-		h.logger.Printf("[!] 模型不可用: %s，回退到: %s", requestedModel, selected)
-	}
-	return h.forward(ctx, method, upstreamURL, token, contentType, retryBody)
-}
-
-func isModelNotSupported(status int, body []byte) bool {
-	if status != http.StatusBadRequest {
-		return false
-	}
-	var payload struct {
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal(body, &payload); err == nil {
-		if payload.Error.Code == "model_not_supported" {
-			return true
-		}
-		if strings.Contains(strings.ToLower(payload.Error.Message), "not supported") {
-			return true
-		}
-	}
-	return strings.Contains(strings.ToLower(string(body)), "not supported")
 }
 
 func copyResponse(w http.ResponseWriter, resp *http.Response) {

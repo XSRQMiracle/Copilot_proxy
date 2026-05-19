@@ -124,24 +124,10 @@ func serve(cfg config.Config, configPath string, logger *log.Logger) error {
 
 	authManager.StartRefreshLoop(ctx, 25*time.Minute, logger.Printf)
 
-	fallbackSelector := proxy.NewFallbackSelector(cfg, client)
-	if authManager.HasCopilotToken() {
-		headers := cfg.DefaultHeaders()
-		headers["Authorization"] = "Bearer " + authManager.CopilotToken()
-		modelsURL := strings.TrimRight(cfg.Copilot.APIBase, "/") + "/models"
-		go func() {
-			if model, err := fallbackSelector.Choose(ctx, modelsURL, headers); err == nil && model != "" {
-				logger.Printf("[~] Fallback model selected: %s", model)
-			} else if err != nil {
-				logger.Printf("[!] Fallback model selection failed: %v", err)
-			}
-		}()
-	}
-
 	stats := proxy.NewStats(500)
-	proxyHandler := proxy.NewHandler(cfg, authManager, fallbackSelector, client, logger, stats)
+	proxyHandler := proxy.NewHandler(cfg, authManager, client, logger, stats)
 	restartCh := make(chan struct{}, 1)
-	app := server.NewApp(&cfg, configPath, authManager, fallbackSelector, proxyHandler, client, logger, restartCh)
+	app := server.NewApp(&cfg, configPath, authManager, proxyHandler, client, logger, restartCh)
 	httpServer := app.HTTPServer()
 
 	lanURL := ""

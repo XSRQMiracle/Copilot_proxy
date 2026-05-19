@@ -166,13 +166,6 @@ func (h *Handler) serveGeminiGenerate(w http.ResponseWriter, r *http.Request, to
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusBadRequest {
-		if retry, retryErr := h.tryFallback(r.Context(), http.MethodPost, copilotURL, token, "application/json", body, resp); retryErr == nil && retry != nil {
-			resp.Body.Close()
-			resp = retry
-			defer resp.Body.Close()
-		}
-	}
 	if resp.StatusCode != http.StatusOK {
 		geminiError(w, resp.StatusCode, readErrorPreview(resp))
 		h.record(RequestRecord{Time: start, Protocol: "gemini", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: resp.StatusCode, Error: "upstream error"})
@@ -240,13 +233,6 @@ func (h *Handler) serveGeminiStream(w http.ResponseWriter, r *http.Request, toke
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusBadRequest {
-		if retry, retryErr := h.tryFallback(r.Context(), http.MethodPost, copilotURL, token, "application/json", body, resp); retryErr == nil && retry != nil {
-			resp.Body.Close()
-			resp = retry
-			defer resp.Body.Close()
-		}
-	}
 	if resp.StatusCode != http.StatusOK {
 		geminiError(w, resp.StatusCode, readErrorPreview(resp))
 		h.record(RequestRecord{Time: start, Protocol: "gemini", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: resp.StatusCode, Error: "upstream error"})

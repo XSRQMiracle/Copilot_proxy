@@ -46,14 +46,6 @@
           </div>
         </div>
 
-        <div class="dash-card">
-          <div class="dash-card-header">
-            <h2>{{ t('dashboardView.sectionFallback') }}</h2>
-          </div>
-          <div class="dash-card-body">
-            <ModelPicker />
-          </div>
-        </div>
       </aside>
 
       <section class="dash-right">
@@ -110,7 +102,6 @@ import DashboardCards from '../components/DashboardCards.vue'
 import QuotaDisplay from '../components/QuotaDisplay.vue'
 import UsageChart from '../components/UsageChart.vue'
 import SettingsForm from '../components/SettingsForm.vue'
-import ModelPicker from '../components/ModelPicker.vue'
 import RequestTable from '../components/RequestTable.vue'
 
 const appStore = useAppStore()

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Config, StatusResponse, StatsResponse, ModelItem, QuotaResponse } from '../api'
+import type { Config, StatusResponse, StatsResponse, QuotaResponse } from '../api'
 
 const themeOrder = ['system', 'light', 'dark'] as const
 let mediaQuery: MediaQueryList | null = null
@@ -25,7 +25,6 @@ export const useAppStore = defineStore('app', () => {
   const config = ref<Config | null>(null)
   const status = ref<StatusResponse | null>(null)
   const stats = ref<StatsResponse | null>(null)
-  const models = ref<ModelItem[]>([])
   const quota = ref<QuotaResponse | null>(null)
   const isLoggedIn = ref(false)
   const theme = ref<'system' | 'light' | 'dark'>('system')
@@ -81,7 +80,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   return {
-    config, status, stats, models, quota,
+    config, status, stats, quota,
     isLoggedIn, theme, language, resolvedTheme,
     activeAccountName, serviceEnabled, copilotReady, githubReady,
     setConfig, applyTheme, cycleTheme,

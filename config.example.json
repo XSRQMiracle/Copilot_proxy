@@ -21,10 +21,6 @@
     "editor_plugin_version": "copilot/1.246.0",
     "user_agent": "GithubCopilot/1.246.0"
   },
-  "fallback": {
-    "preferred_prefixes": ["gpt-4.1", "gpt-4o", "gpt-5-mini", "raptor-mini"],
-    "required_endpoint": "/chat/completions"
-  },
   "security": {
     "api_key": "dummy",
     "admin_password": "admin"

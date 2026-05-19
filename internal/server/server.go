@@ -26,7 +26,6 @@ type App struct {
 	cfg        *config.Config
 	configPath string
 	auth       *auth.Manager
-	fallback   *proxy.FallbackSelector
 	proxy      *proxy.Handler
 	httpClient *http.Client
 	logger     *log.Logger
@@ -36,11 +35,11 @@ type App struct {
 	restartMu  sync.Once
 }
 
-func NewApp(cfg *config.Config, configPath string, authManager *auth.Manager, fallback *proxy.FallbackSelector, proxyHandler *proxy.Handler, httpClient *http.Client, logger *log.Logger, restartCh chan<- struct{}) *App {
+func NewApp(cfg *config.Config, configPath string, authManager *auth.Manager, proxyHandler *proxy.Handler, httpClient *http.Client, logger *log.Logger, restartCh chan<- struct{}) *App {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	return &App{cfg: cfg, configPath: configPath, auth: authManager, fallback: fallback, proxy: proxyHandler, httpClient: httpClient, logger: logger, restartCh: restartCh}
+	return &App{cfg: cfg, configPath: configPath, auth: authManager, proxy: proxyHandler, httpClient: httpClient, logger: logger, restartCh: restartCh}
 }
 
 func (a *App) HTTPServer() *http.Server {
@@ -82,8 +81,6 @@ func (a *App) route(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.api(w, r)
-	case r.URL.Path == "/fallback" && r.Method == http.MethodGet:
-		writeJSON(w, http.StatusOK, map[string]string{"fallback_model": a.fallback.Selected()})
 	case r.URL.Path == "/favicon.ico":
 		a.serveFavicon(w, r)
 	case strings.HasPrefix(r.URL.Path, "/ui") || r.URL.Path == "/ui":
@@ -137,8 +134,6 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		a.updateConfig(w, r)
 	case r.URL.Path == "/api/config/ui" && r.Method == http.MethodPatch:
 		a.patchUIConfig(w, r)
-	case r.URL.Path == "/api/fallback" && r.Method == http.MethodPut:
-		a.updateFallback(w, r)
 	case r.URL.Path == "/api/stats" && r.Method == http.MethodGet:
 		writeJSON(w, http.StatusOK, a.proxy.Stats())
 	case r.URL.Path == "/api/models" && r.Method == http.MethodGet:
@@ -206,7 +201,6 @@ func (a *App) status(w http.ResponseWriter, _ *http.Request) {
 		"github_token_ready":  a.auth.HasGitHubToken(),
 		"copilot_token_ready": a.auth.HasCopilotToken(),
 		"copilot_expires_at":  expires,
-		"fallback_model":      a.fallback.Selected(),
 		"config_path":         a.configPath,
 		"base_url":            baseURL,
 		"service_enabled":     !proxyDisabled,
@@ -289,15 +283,13 @@ func (a *App) updateConfig(w http.ResponseWriter, r *http.Request) {
 	*a.cfg = reloaded
 	a.mu.Unlock()
 	a.proxy.UpdateConfig(reloaded)
-	a.fallback.UpdateConfig(reloaded)
-	a.refreshFallbackChoice(r)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
 	if r.URL.Query().Get("restart") != "false" {
 		a.triggerRestart()
 	}
 }
 
-// patchUIConfig 轻量更新 ui.* 字段，不触发重启、不重新加载 token、不刷新 fallback。
+// patchUIConfig 轻量更新 ui.* 字段，不触发重启、不重新加载 token。
 // 直接读磁盘 JSON → 改 ui 字段 → 写回，零额外开销。
 func (a *App) patchUIConfig(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
@@ -354,61 +346,6 @@ func (a *App) patchUIConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
 }
 
-func (a *App) updateFallback(w http.ResponseWriter, r *http.Request) {
-	var payload struct {
-		PreferredPrefixes []string `json:"preferred_prefixes"`
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	cleaned := make([]string, 0, len(payload.PreferredPrefixes))
-	for _, pref := range payload.PreferredPrefixes {
-		pref = strings.TrimSpace(pref)
-		if pref != "" {
-			cleaned = append(cleaned, pref)
-		}
-	}
-	a.mu.Lock()
-	a.cfg.Fallback.PreferredPrefixes = cleaned
-	snapshot := *a.cfg
-	a.mu.Unlock()
-	if err := config.Save(a.configPath, snapshot); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	reloaded, _, err := config.LoadWithDecryptedTokens(a.configPath)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	a.mu.Lock()
-	*a.cfg = reloaded
-	preferredPrefixes := append([]string{}, a.cfg.Fallback.PreferredPrefixes...)
-	a.mu.Unlock()
-	a.fallback.UpdateConfig(reloaded)
-	a.refreshFallbackChoice(r)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":             "saved",
-		"preferred_prefixes": preferredPrefixes,
-		"fallback_model":     a.fallback.Selected(),
-	})
-}
-
-func (a *App) refreshFallbackChoice(r *http.Request) {
-	if token := a.auth.CopilotToken(); token != "" {
-		a.mu.RLock()
-		headers := a.cfg.DefaultHeaders()
-		apiBase := a.cfg.Copilot.APIBase
-		a.mu.RUnlock()
-		headers["Authorization"] = "Bearer " + token
-		if _, err := a.fallback.Choose(r.Context(), strings.TrimRight(apiBase, "/")+"/models", headers); err != nil {
-			a.logger.Printf("[!] fallback model refresh: %v", err)
-		}
-	}
-}
-
 func (a *App) updateService(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		Enabled bool `json:"enabled"`
@@ -427,7 +364,6 @@ func (a *App) updateService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.proxy.UpdateConfig(snapshot)
-	a.fallback.UpdateConfig(snapshot)
 	writeJSON(w, http.StatusOK, map[string]any{"enabled": payload.Enabled})
 }
 
@@ -557,7 +493,6 @@ func (a *App) models(w http.ResponseWriter, r *http.Request) {
 	a.mu.RLock()
 	apiBase := a.cfg.Copilot.APIBase
 	headers := a.cfg.DefaultHeaders()
-	requiredEndpoint := a.cfg.Fallback.RequiredEndpoint
 	a.mu.RUnlock()
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, strings.TrimRight(apiBase, "/")+"/models", nil)
 	if err != nil {
@@ -579,58 +514,7 @@ func (a *App) models(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, resp.StatusCode, enrichModelAvailability(payload, requiredEndpoint))
-}
-
-func enrichModelAvailability(payload any, requiredEndpoint string) any {
-	root, ok := payload.(map[string]any)
-	if !ok {
-		return payload
-	}
-	for _, key := range []string{"data", "models"} {
-		items, ok := root[key].([]any)
-		if !ok {
-			continue
-		}
-		enriched := make([]any, 0, len(items))
-		for _, item := range items {
-			model, ok := item.(map[string]any)
-			if !ok {
-				enriched = append(enriched, item)
-				continue
-			}
-			copy := make(map[string]any, len(model)+1)
-			maps.Copy(copy, model)
-			copy["available"] = modelAvailable(copy, requiredEndpoint)
-			enriched = append(enriched, copy)
-		}
-		root[key] = enriched
-	}
-	return root
-}
-
-func modelAvailable(model map[string]any, requiredEndpoint string) bool {
-	if enabled, ok := model["model_picker_enabled"].(bool); ok && !enabled {
-		return false
-	}
-	if policy, ok := model["policy"].(map[string]any); ok {
-		if state, _ := policy["state"].(string); state != "" && state == "disabled" {
-			return false
-		}
-	}
-	if requiredEndpoint == "" {
-		return true
-	}
-	raw, ok := model["supported_endpoints"].([]any)
-	if !ok || len(raw) == 0 {
-		return true
-	}
-	for _, item := range raw {
-		if endpoint, ok := item.(string); ok && endpoint == requiredEndpoint {
-			return true
-		}
-	}
-	return false
+	writeJSON(w, resp.StatusCode, payload)
 }
 
 func (a *App) quota(w http.ResponseWriter, r *http.Request) {

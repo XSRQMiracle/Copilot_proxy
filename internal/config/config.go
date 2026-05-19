@@ -20,7 +20,6 @@ type Config struct {
 	GitHub   GitHubConfig   `json:"github"`
 	Copilot  CopilotConfig  `json:"copilot"`
 	Headers  HeaderConfig   `json:"headers"`
-	Fallback FallbackConfig `json:"fallback"`
 	Security SecurityConfig `json:"security"`
 	Runtime  RuntimeConfig  `json:"runtime"`
 	Auth     AuthConfig     `json:"auth"`
@@ -51,11 +50,6 @@ type HeaderConfig struct {
 	EditorVersion       string `json:"editor_version"`
 	EditorPluginVersion string `json:"editor_plugin_version"`
 	UserAgent           string `json:"user_agent"`
-}
-
-type FallbackConfig struct {
-	PreferredPrefixes []string `json:"preferred_prefixes"`
-	RequiredEndpoint  string   `json:"required_endpoint"`
 }
 
 type SecurityConfig struct {
@@ -107,10 +101,6 @@ func Default() Config {
 			EditorVersion:       "vscode/1.96.0",
 			EditorPluginVersion: "copilot/1.246.0",
 			UserAgent:           "GithubCopilot/1.246.0",
-		},
-		Fallback: FallbackConfig{
-			PreferredPrefixes: []string{"gpt-4.1", "gpt-4o", "gpt-5-mini", "raptor-mini"},
-			RequiredEndpoint:  "/chat/completions",
 		},
 		Security: SecurityConfig{
 			APIKey:          "dummy",
@@ -342,12 +332,6 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Headers.UserAgent == "" {
 		c.Headers.UserAgent = d.Headers.UserAgent
-	}
-	if c.Fallback.PreferredPrefixes == nil {
-		c.Fallback.PreferredPrefixes = d.Fallback.PreferredPrefixes
-	}
-	if c.Fallback.RequiredEndpoint == "" {
-		c.Fallback.RequiredEndpoint = d.Fallback.RequiredEndpoint
 	}
 	if c.Security.APIKey == "" {
 		c.Security.APIKey = d.Security.APIKey

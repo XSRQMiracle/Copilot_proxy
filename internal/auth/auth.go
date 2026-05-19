@@ -226,17 +226,22 @@ func (m *Manager) RefreshCopilotToken(ctx context.Context) error {
 }
 
 // refreshCopilotTokenWith 使用指定的 GitHub Token 刷新 Copilot Token。
-// 刷新前清空旧 token，刷新成功才设置新值，失败则保持清空状态。
+// 先获取新 token，成功后再提交，失败时保留旧 token。
 func (m *Manager) refreshCopilotTokenWith(ctx context.Context, githubToken string) error {
-	// 清空旧 token，避免失败后保留过期凭据
-	m.mu.Lock()
-	m.copilotToken = ""
-	m.expiresAt = time.Time{}
-	m.mu.Unlock()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.cfg.GitHub.CopilotTokenURL, nil)
+	token, expiresAt, err := m.fetchCopilotToken(ctx, githubToken)
 	if err != nil {
 		return err
+	}
+	m.commitCopilotToken(token, expiresAt)
+	return nil
+}
+
+// fetchCopilotToken 只做 HTTP 请求获取 token，不修改 Manager 状态。
+// 返回 token 字符串和过期时间，调用方负责提交。
+func (m *Manager) fetchCopilotToken(ctx context.Context, githubToken string) (string, time.Time, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.cfg.GitHub.CopilotTokenURL, nil)
+	if err != nil {
+		return "", time.Time{}, err
 	}
 	for k, v := range m.cfg.DefaultHeaders() {
 		req.Header.Set(k, v)
@@ -247,7 +252,7 @@ func (m *Manager) refreshCopilotTokenWith(ctx context.Context, githubToken strin
 
 	resp, err := m.httpClient.Do(req)
 	if err != nil {
-		return err
+		return "", time.Time{}, err
 	}
 	defer resp.Body.Close()
 
@@ -257,21 +262,23 @@ func (m *Manager) refreshCopilotTokenWith(ctx context.Context, githubToken strin
 		Message   string `json:"message"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return err
+		return "", time.Time{}, err
 	}
 	if payload.Token == "" {
 		if payload.Message != "" {
-			return fmt.Errorf("copilot token request failed with status %d: %s", resp.StatusCode, payload.Message)
+			return "", time.Time{}, fmt.Errorf("copilot token request failed with status %d: %s", resp.StatusCode, payload.Message)
 		}
-		return fmt.Errorf("copilot token request failed with status %d", resp.StatusCode)
+		return "", time.Time{}, fmt.Errorf("copilot token request failed with status %d", resp.StatusCode)
 	}
+	return payload.Token, time.Unix(payload.ExpiresAt, 0), nil
+}
 
-	expiresAt := time.Unix(payload.ExpiresAt, 0)
+// commitCopilotToken 原子性写入 copilotToken 和 expiresAt（带写锁）。
+func (m *Manager) commitCopilotToken(token string, expiresAt time.Time) {
 	m.mu.Lock()
-	m.copilotToken = payload.Token
+	m.copilotToken = token
 	m.expiresAt = expiresAt
 	m.mu.Unlock()
-	return nil
 }
 
 func (m *Manager) StartRefreshLoop(ctx context.Context, every time.Duration, logf func(string, ...any)) {

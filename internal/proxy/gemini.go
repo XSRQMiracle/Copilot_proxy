@@ -23,7 +23,7 @@ func (h *Handler) ServeGeminiModels(w http.ResponseWriter, r *http.Request, gemi
 		h.record(RequestRecord{Time: start, Protocol: "gemini", Method: r.Method, Path: r.URL.Path, Status: http.StatusMethodNotAllowed, Error: "method not allowed"})
 		return
 	}
-	if h.cfg.Runtime.ProxyDisabled {
+	if h.proxyDisabled() {
 		geminiError(w, http.StatusServiceUnavailable, "proxy service is disabled")
 		h.record(RequestRecord{Time: start, Protocol: "gemini", Method: r.Method, Path: r.URL.Path, Status: http.StatusServiceUnavailable, Error: "proxy disabled"})
 		return
@@ -49,6 +49,7 @@ func (h *Handler) ServeGeminiModels(w http.ResponseWriter, r *http.Request, gemi
 	}
 
 	var payload map[string]any
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		geminiError(w, http.StatusBadRequest, "Invalid JSON body")
 		h.record(RequestRecord{Time: start, Protocol: "gemini", Method: r.Method, Path: r.URL.Path, Model: model, Status: http.StatusBadRequest, Error: "invalid json"})
@@ -156,7 +157,7 @@ func (h *Handler) serveGeminiGenerate(w http.ResponseWriter, r *http.Request, to
 		h.record(RequestRecord{Time: start, Protocol: "gemini", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: http.StatusBadRequest, Error: err.Error()})
 		return
 	}
-	copilotURL := strings.TrimRight(h.cfg.Copilot.APIBase, "/") + "/chat/completions"
+	copilotURL := h.chatCompletionsURL()
 	resp, err := h.forward(r.Context(), http.MethodPost, copilotURL, token, "application/json", body)
 	if err != nil {
 		geminiError(w, http.StatusBadGateway, err.Error())
@@ -230,7 +231,7 @@ func (h *Handler) serveGeminiStream(w http.ResponseWriter, r *http.Request, toke
 		h.record(RequestRecord{Time: start, Protocol: "gemini", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: http.StatusBadRequest, Error: err.Error()})
 		return
 	}
-	copilotURL := strings.TrimRight(h.cfg.Copilot.APIBase, "/") + "/chat/completions"
+	copilotURL := h.chatCompletionsURL()
 	resp, err := h.forward(r.Context(), http.MethodPost, copilotURL, token, "application/json", body)
 	if err != nil {
 		geminiError(w, http.StatusBadGateway, err.Error())

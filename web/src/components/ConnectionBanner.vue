@@ -52,7 +52,7 @@ onUnmounted(() => {
 <style scoped>
 .conn-banner {
   position: fixed;
-  top: 120px;
+  top: 75px;
   right: 12px;
   z-index: 9999;
   display: inline-flex;

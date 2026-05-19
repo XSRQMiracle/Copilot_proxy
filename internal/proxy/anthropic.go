@@ -23,7 +23,7 @@ func (h *Handler) ServeAnthropicMessages(w http.ResponseWriter, r *http.Request)
 		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Status: http.StatusMethodNotAllowed, Error: "method not allowed"})
 		return
 	}
-	if h.cfg.Runtime.ProxyDisabled {
+	if h.proxyDisabled() {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "proxy service is disabled"})
 		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Status: http.StatusServiceUnavailable, Error: "proxy disabled"})
 		return
@@ -42,6 +42,7 @@ func (h *Handler) ServeAnthropicMessages(w http.ResponseWriter, r *http.Request)
 	}
 
 	var payload map[string]any
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "无效的 JSON 请求体"})
 		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Status: http.StatusBadRequest, Error: "invalid json"})
@@ -67,7 +68,8 @@ func (h *Handler) ServeAnthropicMessages(w http.ResponseWriter, r *http.Request)
 		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: http.StatusBadRequest, Error: err.Error()})
 		return
 	}
-	resp, err := h.forward(r.Context(), http.MethodPost, strings.TrimRight(h.cfg.Copilot.APIBase, "/")+"/chat/completions", token, "application/json", body)
+	copilotURL := h.chatCompletionsURL()
+	resp, err := h.forward(r.Context(), http.MethodPost, copilotURL, token, "application/json", body)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: http.StatusBadGateway, Error: err.Error()})
@@ -76,7 +78,7 @@ func (h *Handler) ServeAnthropicMessages(w http.ResponseWriter, r *http.Request)
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusBadRequest {
-		if retry, retryErr := h.tryFallback(r.Context(), http.MethodPost, strings.TrimRight(h.cfg.Copilot.APIBase, "/")+"/chat/completions", token, "application/json", body, resp); retryErr == nil && retry != nil {
+		if retry, retryErr := h.tryFallback(r.Context(), http.MethodPost, copilotURL, token, "application/json", body, resp); retryErr == nil && retry != nil {
 			resp.Body.Close()
 			resp = retry
 			defer resp.Body.Close()
@@ -207,7 +209,7 @@ func (h *Handler) serveAnthropicStream(w http.ResponseWriter, r *http.Request, t
 		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: http.StatusBadRequest, Error: err.Error()})
 		return
 	}
-	copilotURL := strings.TrimRight(h.cfg.Copilot.APIBase, "/") + "/chat/completions"
+	copilotURL := h.chatCompletionsURL()
 	resp, err := h.forward(r.Context(), http.MethodPost, copilotURL, token, "application/json", body)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})

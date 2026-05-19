@@ -44,7 +44,7 @@ func run(args []string) error {
 		case "serve":
 			return serve(cfg, resolvedPath, logger)
 		case "login":
-			return login(cfg, logger)
+			return login(cfg, resolvedPath, logger)
 		case "logout":
 			return logout(cfg, resolvedPath, logger)
 		case "config":
@@ -141,7 +141,7 @@ func serve(cfg config.Config, configPath string, logger *log.Logger) error {
 	stats := proxy.NewStats(500)
 	proxyHandler := proxy.NewHandler(cfg, authManager, fallbackSelector, client, logger, stats)
 	restartCh := make(chan struct{}, 1)
-	app := server.NewApp(&cfg, configPath, authManager, fallbackSelector, proxyHandler, logger, restartCh)
+	app := server.NewApp(&cfg, configPath, authManager, fallbackSelector, proxyHandler, client, logger, restartCh)
 	httpServer := app.HTTPServer()
 
 	lanURL := ""
@@ -262,9 +262,9 @@ func waitForPort(addr string, attempts int, delay time.Duration) error {
 	return fmt.Errorf("port %s not accepting connections after %d attempts, last err: %w", addr, attempts, lastErr)
 }
 
-func login(cfg config.Config, logger *log.Logger) error {
+func login(cfg config.Config, configPath string, logger *log.Logger) error {
 	client := &http.Client{Timeout: cfg.HTTPTimeout()}
-	mgr := auth.NewManager(&cfg, "", client)
+	mgr := auth.NewManager(&cfg, configPath, client)
 
 	flow, err := mgr.StartDeviceFlow(context.Background())
 	if err != nil {
@@ -290,20 +290,10 @@ func login(cfg config.Config, logger *log.Logger) error {
 		return fmt.Errorf("wait for token: %w", err)
 	}
 
-	// 保存 token 到配置
-	configPath, err := config.DefaultPath()
-	if err != nil {
-		return err
-	}
-	cfg2, _, err := config.LoadWithDecryptedTokens(configPath)
-	if err != nil {
-		return err
-	}
-	mgr2 := auth.NewManager(&cfg2, configPath, client)
-	if _, err := mgr2.AddAccount(context.Background(), token); err != nil {
+	if _, err := mgr.AddAccount(context.Background(), token); err != nil {
 		return fmt.Errorf("save account: %w", err)
 	}
-	if err := mgr2.RefreshCopilotToken(context.Background()); err != nil {
+	if err := mgr.RefreshCopilotToken(context.Background()); err != nil {
 		return fmt.Errorf("refresh copilot token: %w", err)
 	}
 	fmt.Println("[+] Authorization successful!")

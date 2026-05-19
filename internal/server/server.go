@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"net/http"
 	"os"
 	"path"
@@ -21,11 +22,13 @@ import (
 )
 
 type App struct {
+	mu         sync.RWMutex
 	cfg        *config.Config
 	configPath string
 	auth       *auth.Manager
 	fallback   *proxy.FallbackSelector
 	proxy      *proxy.Handler
+	httpClient *http.Client
 	logger     *log.Logger
 	deviceMu   sync.Mutex
 	deviceFlow *auth.DeviceFlow
@@ -33,8 +36,11 @@ type App struct {
 	restartMu  sync.Once
 }
 
-func NewApp(cfg *config.Config, configPath string, authManager *auth.Manager, fallback *proxy.FallbackSelector, proxyHandler *proxy.Handler, logger *log.Logger, restartCh chan<- struct{}) *App {
-	return &App{cfg: cfg, configPath: configPath, auth: authManager, fallback: fallback, proxy: proxyHandler, logger: logger, restartCh: restartCh}
+func NewApp(cfg *config.Config, configPath string, authManager *auth.Manager, fallback *proxy.FallbackSelector, proxyHandler *proxy.Handler, httpClient *http.Client, logger *log.Logger, restartCh chan<- struct{}) *App {
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	return &App{cfg: cfg, configPath: configPath, auth: authManager, fallback: fallback, proxy: proxyHandler, httpClient: httpClient, logger: logger, restartCh: restartCh}
 }
 
 func (a *App) HTTPServer() *http.Server {
@@ -92,18 +98,20 @@ func (a *App) authenticateAPI(r *http.Request) bool {
 	if r.URL.Path == "/api/auth/login" {
 		return true
 	}
+	a.mu.RLock()
+	hasAdminPassword := a.cfg.HasAdminPassword()
+	adminPassword := a.cfg.Security.AdminPassword
+	a.mu.RUnlock()
 	// 如果没有设置 admin password，允许访问（兼容旧配置）
-	if !a.cfg.HasAdminPassword() {
+	if !hasAdminPassword {
 		return true
 	}
 	token := r.Header.Get("Authorization")
-	if strings.HasPrefix(token, "Bearer ") {
-		token = strings.TrimPrefix(token, "Bearer ")
-	}
+	token = strings.TrimPrefix(token, "Bearer ")
 	if token == "" {
 		token = r.URL.Query().Get("token")
 	}
-	if subtle.ConstantTimeCompare([]byte(token), []byte(a.cfg.Security.AdminPassword)) == 1 {
+	if subtle.ConstantTimeCompare([]byte(token), []byte(adminPassword)) == 1 {
 		return true
 	}
 	return false
@@ -164,18 +172,22 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		Password string `json:"password"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
-	if subtle.ConstantTimeCompare([]byte(payload.Password), []byte(a.cfg.Security.AdminPassword)) == 1 {
+	a.mu.RLock()
+	adminPassword := a.cfg.Security.AdminPassword
+	a.mu.RUnlock()
+	if subtle.ConstantTimeCompare([]byte(payload.Password), []byte(adminPassword)) == 1 {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "token": payload.Password})
 		return
 	}
 	writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid password"})
 }
 
-func (a *App) status(w http.ResponseWriter, r *http.Request) {
+func (a *App) status(w http.ResponseWriter, _ *http.Request) {
 	expiresAt := a.auth.Expiration()
 	var expires any
 	if !expiresAt.IsZero() {
@@ -186,20 +198,27 @@ func (a *App) status(w http.ResponseWriter, r *http.Request) {
 	if account != nil {
 		accountName = account.Name
 	}
+	a.mu.RLock()
+	baseURL := a.cfg.PublicBaseURL()
+	proxyDisabled := a.cfg.Runtime.ProxyDisabled
+	a.mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"github_token_ready":  a.auth.HasGitHubToken(),
 		"copilot_token_ready": a.auth.HasCopilotToken(),
 		"copilot_expires_at":  expires,
 		"fallback_model":      a.fallback.Selected(),
 		"config_path":         a.configPath,
-		"base_url":            a.cfg.PublicBaseURL(),
-		"service_enabled":     !a.cfg.Runtime.ProxyDisabled,
+		"base_url":            baseURL,
+		"service_enabled":     !proxyDisabled,
 		"active_account":      accountName,
 	})
 }
 
-func (a *App) getConfig(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, redactConfigSecrets(*a.cfg))
+func (a *App) getConfig(w http.ResponseWriter, _ *http.Request) {
+	a.mu.RLock()
+	cfg := *a.cfg
+	a.mu.RUnlock()
+	writeJSON(w, http.StatusOK, redactConfigSecrets(cfg))
 }
 
 // redactConfigSecrets 返回配置的深拷贝，清除所有账号的 GitHubToken，
@@ -224,6 +243,7 @@ func (a *App) triggerRestart() {
 
 func (a *App) updateConfig(w http.ResponseWriter, r *http.Request) {
 	var next config.Config
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 	if err := json.NewDecoder(r.Body).Decode(&next); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -233,12 +253,16 @@ func (a *App) updateConfig(w http.ResponseWriter, r *http.Request) {
 	// The GET /api/config endpoint redacts tokens for security, so the settings form
 	// always submits empty token values. Without this guard, saving settings would
 	// permanently wipe the encrypted token from disk.
+	a.mu.RLock()
+	existingAccounts := append([]config.AccountConfig{}, a.cfg.Auth.Accounts...)
+	activeAccountID := a.cfg.Auth.ActiveAccountID
+	a.mu.RUnlock()
 	for i := range next.Auth.Accounts {
 		if next.Auth.Accounts[i].GitHubToken == "" {
-			for j := range a.cfg.Auth.Accounts {
-				if a.cfg.Auth.Accounts[j].ID == next.Auth.Accounts[i].ID {
-					if a.cfg.Auth.Accounts[j].GitHubToken != "" {
-						next.Auth.Accounts[i].GitHubToken = a.cfg.Auth.Accounts[j].GitHubToken
+			for j := range existingAccounts {
+				if existingAccounts[j].ID == next.Auth.Accounts[i].ID {
+					if existingAccounts[j].GitHubToken != "" {
+						next.Auth.Accounts[i].GitHubToken = existingAccounts[j].GitHubToken
 					}
 					break
 				}
@@ -255,13 +279,15 @@ func (a *App) updateConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	if a.cfg.Auth.ActiveAccountID != reloaded.Auth.ActiveAccountID {
+	if activeAccountID != reloaded.Auth.ActiveAccountID {
 		if err := a.auth.SwitchAccount(r.Context(), reloaded.Auth.ActiveAccountID); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
 	}
+	a.mu.Lock()
 	*a.cfg = reloaded
+	a.mu.Unlock()
 	a.proxy.UpdateConfig(reloaded)
 	a.fallback.UpdateConfig(reloaded)
 	a.refreshFallbackChoice(r)
@@ -278,6 +304,7 @@ func (a *App) patchUIConfig(w http.ResponseWriter, r *http.Request) {
 		Theme    *string `json:"theme,omitempty"`
 		Language *string `json:"language,omitempty"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -321,7 +348,9 @@ func (a *App) patchUIConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	a.mu.Lock()
 	a.cfg.UI = cfg.UI
+	a.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
 }
 
@@ -329,6 +358,7 @@ func (a *App) updateFallback(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		PreferredPrefixes []string `json:"preferred_prefixes"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -340,8 +370,11 @@ func (a *App) updateFallback(w http.ResponseWriter, r *http.Request) {
 			cleaned = append(cleaned, pref)
 		}
 	}
+	a.mu.Lock()
 	a.cfg.Fallback.PreferredPrefixes = cleaned
-	if err := config.Save(a.configPath, *a.cfg); err != nil {
+	snapshot := *a.cfg
+	a.mu.Unlock()
+	if err := config.Save(a.configPath, snapshot); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
@@ -350,21 +383,27 @@ func (a *App) updateFallback(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	a.mu.Lock()
 	*a.cfg = reloaded
+	preferredPrefixes := append([]string{}, a.cfg.Fallback.PreferredPrefixes...)
+	a.mu.Unlock()
 	a.fallback.UpdateConfig(reloaded)
 	a.refreshFallbackChoice(r)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":             "saved",
-		"preferred_prefixes": a.cfg.Fallback.PreferredPrefixes,
+		"preferred_prefixes": preferredPrefixes,
 		"fallback_model":     a.fallback.Selected(),
 	})
 }
 
 func (a *App) refreshFallbackChoice(r *http.Request) {
 	if token := a.auth.CopilotToken(); token != "" {
+		a.mu.RLock()
 		headers := a.cfg.DefaultHeaders()
+		apiBase := a.cfg.Copilot.APIBase
+		a.mu.RUnlock()
 		headers["Authorization"] = "Bearer " + token
-		if _, err := a.fallback.Choose(r.Context(), strings.TrimRight(a.cfg.Copilot.APIBase, "/")+"/models", headers); err != nil {
+		if _, err := a.fallback.Choose(r.Context(), strings.TrimRight(apiBase, "/")+"/models", headers); err != nil {
 			a.logger.Printf("[!] fallback model refresh: %v", err)
 		}
 	}
@@ -374,21 +413,25 @@ func (a *App) updateService(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		Enabled bool `json:"enabled"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	a.mu.Lock()
 	a.cfg.Runtime.ProxyDisabled = !payload.Enabled
-	if err := config.Save(a.configPath, *a.cfg); err != nil {
+	snapshot := *a.cfg
+	a.mu.Unlock()
+	if err := config.Save(a.configPath, snapshot); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	a.proxy.UpdateConfig(*a.cfg)
-	a.fallback.UpdateConfig(*a.cfg)
+	a.proxy.UpdateConfig(snapshot)
+	a.fallback.UpdateConfig(snapshot)
 	writeJSON(w, http.StatusOK, map[string]any{"enabled": payload.Enabled})
 }
 
-func (a *App) listAccounts(w http.ResponseWriter, r *http.Request) {
+func (a *App) listAccounts(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"active_account_id": a.auth.ActiveAccountID(),
 		"accounts":          a.auth.ListAccounts(),
@@ -399,6 +442,7 @@ func (a *App) addAccount(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		GitHubToken string `json:"github_token"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
@@ -420,6 +464,7 @@ func (a *App) switchAccount(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		ID string `json:"id"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
@@ -474,7 +519,7 @@ func (a *App) pollDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if oauthErr != "" {
-		writeJSON(w, http.StatusAccepted, map[string]string{"status": oauthErr})
+		writeJSON(w, http.StatusOK, map[string]string{"status": oauthErr})
 		return
 	}
 	if _, err := a.auth.AddAccount(r.Context(), token); err != nil {
@@ -509,16 +554,21 @@ func (a *App) models(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Copilot token not ready"})
 		return
 	}
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, strings.TrimRight(a.cfg.Copilot.APIBase, "/")+"/models", nil)
+	a.mu.RLock()
+	apiBase := a.cfg.Copilot.APIBase
+	headers := a.cfg.DefaultHeaders()
+	requiredEndpoint := a.cfg.Fallback.RequiredEndpoint
+	a.mu.RUnlock()
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, strings.TrimRight(apiBase, "/")+"/models", nil)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	for k, v := range a.cfg.DefaultHeaders() {
+	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
@@ -529,7 +579,7 @@ func (a *App) models(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, resp.StatusCode, enrichModelAvailability(payload, a.cfg.Fallback.RequiredEndpoint))
+	writeJSON(w, resp.StatusCode, enrichModelAvailability(payload, requiredEndpoint))
 }
 
 func enrichModelAvailability(payload any, requiredEndpoint string) any {
@@ -550,9 +600,7 @@ func enrichModelAvailability(payload any, requiredEndpoint string) any {
 				continue
 			}
 			copy := make(map[string]any, len(model)+1)
-			for k, v := range model {
-				copy[k] = v
-			}
+			maps.Copy(copy, model)
 			copy["available"] = modelAvailable(copy, requiredEndpoint)
 			enriched = append(enriched, copy)
 		}
@@ -602,16 +650,19 @@ func (a *App) quota(w http.ResponseWriter, r *http.Request) {
 	results := make([]map[string]any, 0, len(endpoints))
 	var quota map[string]any
 	hadOK := false
+	a.mu.RLock()
+	headers := a.cfg.DefaultHeaders()
+	a.mu.RUnlock()
 	for _, endpoint := range endpoints {
 		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, endpoint, nil)
 		if err != nil {
 			continue
 		}
-		for k, v := range a.cfg.DefaultHeaders() {
+		for k, v := range headers {
 			req.Header.Set(k, v)
 		}
 		req.Header.Set("Authorization", "token "+token)
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := a.httpClient.Do(req)
 		if err != nil {
 			results = append(results, map[string]any{"endpoint": endpoint, "error": err.Error()})
 			continue
@@ -779,9 +830,7 @@ func normalizeQuotaSnapshot(value any) map[string]any {
 		return nil
 	}
 	normalized := make(map[string]any, len(raw))
-	for key, value := range raw {
-		normalized[key] = value
-	}
+	maps.Copy(normalized, raw)
 	copyFirstQuotaField(normalized, raw, "remaining", "quota_remaining", "remaining_quota")
 	copyFirstQuotaField(normalized, raw, "entitlement", "limit", "total", "quota")
 	copyFirstQuotaField(normalized, raw, "percent_remaining", "remaining_percent")

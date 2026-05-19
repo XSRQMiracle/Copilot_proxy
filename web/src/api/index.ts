@@ -110,9 +110,6 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { 'Content-Type': 'application/json', ...init?.headers },
     ...init,
   })
-  if (res.status === 202) {
-    return { status: 'pending' } as unknown as T
-  }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
     throw new Error((data as any).error ?? res.statusText)

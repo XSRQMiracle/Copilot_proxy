@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Open-Copilot-Proxy/Copilot_Proxy/internal/auth"
@@ -26,6 +27,7 @@ var excludedResponseHeaders = map[string]struct{}{
 }
 
 type Handler struct {
+	mu       sync.RWMutex
 	cfg      config.Config
 	auth     *auth.Manager
 	fallback *FallbackSelector
@@ -45,6 +47,8 @@ func NewHandler(cfg config.Config, authManager *auth.Manager, fallback *Fallback
 }
 
 func (h *Handler) UpdateConfig(cfg config.Config) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.cfg = cfg
 }
 
@@ -54,12 +58,12 @@ func (h *Handler) Stats() StatsSnapshot {
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	if !h.cfg.Runtime.ProxyDisabled && !h.authorized(r) {
+	if !h.proxyDisabled() && !h.authorized(r) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid api key"})
 		h.record(RequestRecord{Time: start, Protocol: "openai", Method: r.Method, Path: r.URL.Path, Status: http.StatusUnauthorized, DurationMs: time.Since(start).Milliseconds(), Error: "invalid api key"})
 		return
 	}
-	if h.cfg.Runtime.ProxyDisabled {
+	if h.proxyDisabled() {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "proxy service is disabled"})
 		h.record(RequestRecord{Time: start, Protocol: "openai", Method: r.Method, Path: r.URL.Path, Status: http.StatusServiceUnavailable, DurationMs: time.Since(start).Milliseconds(), Error: "proxy disabled"})
 		return
@@ -77,6 +81,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.record(RequestRecord{Time: start, Protocol: "openai", Method: r.Method, Path: r.URL.Path, Status: http.StatusBadGateway, DurationMs: time.Since(start).Milliseconds(), Error: err.Error()})
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -109,7 +114,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) upstreamURL(path string, rawQuery string) (string, error) {
 	normalized := strings.TrimPrefix(path, "/")
 	normalized = strings.TrimPrefix(normalized, "v1/")
-	base, err := url.Parse(h.cfg.Copilot.APIBase)
+	base, err := url.Parse(h.copilotAPIBase())
 	if err != nil {
 		return "", err
 	}
@@ -123,7 +128,8 @@ func (h *Handler) forward(ctx context.Context, method, upstreamURL, token, conte
 	if err != nil {
 		return nil, err
 	}
-	for k, v := range h.cfg.DefaultHeaders() {
+	headers, integrationID := h.forwardConfig()
+	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
 	if contentType == "" {
@@ -131,8 +137,30 @@ func (h *Handler) forward(ctx context.Context, method, upstreamURL, token, conte
 	}
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Copilot-Integration-Id", h.cfg.Copilot.IntegrationID)
+	req.Header.Set("Copilot-Integration-Id", integrationID)
 	return h.client.Do(req)
+}
+
+func (h *Handler) proxyDisabled() bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.cfg.Runtime.ProxyDisabled
+}
+
+func (h *Handler) copilotAPIBase() string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.cfg.Copilot.APIBase
+}
+
+func (h *Handler) chatCompletionsURL() string {
+	return strings.TrimRight(h.copilotAPIBase(), "/") + "/chat/completions"
+}
+
+func (h *Handler) forwardConfig() (map[string]string, string) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.cfg.DefaultHeaders(), h.cfg.Copilot.IntegrationID
 }
 
 func cleanBody(raw []byte) []byte {
@@ -183,10 +211,10 @@ func (h *Handler) tryFallback(ctx context.Context, method, upstreamURL, token, c
 	requestedModel, _ := requestBody["model"].(string)
 	selected := h.fallback.Selected()
 	if selected == "" {
-		headers := h.cfg.DefaultHeaders()
+		headers := h.defaultHeaders()
 		headers["Authorization"] = "Bearer " + token
 		var err error
-		selected, err = h.fallback.Choose(ctx, strings.TrimRight(h.cfg.Copilot.APIBase, "/")+"/models", headers)
+		selected, err = h.fallback.Choose(ctx, strings.TrimRight(h.copilotAPIBase(), "/")+"/models", headers)
 		if err != nil {
 			return nil, err
 		}
@@ -311,7 +339,7 @@ func (h *Handler) copyAndRecordResponse(w http.ResponseWriter, resp *http.Respon
 }
 
 func (h *Handler) authorized(r *http.Request) bool {
-	expected := strings.TrimSpace(h.cfg.Security.APIKey)
+	expected := strings.TrimSpace(h.apiKey())
 	if expected == "" {
 		return true
 	}
@@ -326,6 +354,18 @@ func (h *Handler) authorized(r *http.Request) bool {
 		return true
 	}
 	return false
+}
+
+func (h *Handler) apiKey() string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.cfg.Security.APIKey
+}
+
+func (h *Handler) defaultHeaders() map[string]string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.cfg.DefaultHeaders()
 }
 
 func ShouldExcludeFromStats(path string) bool {

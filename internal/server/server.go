@@ -455,7 +455,12 @@ func (a *App) pollDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if oauthErr != "" {
-		writeJSON(w, http.StatusOK, map[string]string{"status": oauthErr})
+		switch oauthErr {
+		case "authorization_pending", "slow_down":
+			writeJSON(w, http.StatusOK, map[string]string{"status": oauthErr})
+		default:
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": oauthErr})
+		}
 		return
 	}
 	if _, err := a.auth.AddAccount(r.Context(), token); err != nil {

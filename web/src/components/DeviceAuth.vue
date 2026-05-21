@@ -138,7 +138,17 @@ async function poll(runId: number) {
   if (!flow.value || polling.value) return
   polling.value = true
   try {
-    const result = await deviceApi.poll()
+    let result
+    try {
+      result = await deviceApi.poll()
+    } catch (err) {
+      if (!isCurrentRun(runId)) return
+      // 非 2xx 响应：终端 OAuth 错误（expired_token / access_denied 等），关闭弹窗
+      clearPoll()
+      message.error(t('deviceAuth.authExpired'))
+      close()
+      return
+    }
     if (!isCurrentRun(runId)) return
     if (result.status === 'authorized') {
       message.success(t('deviceAuth.authSuccess'))

@@ -2,7 +2,9 @@
 .vscode/
 .idea/
 .DS_Store
+.codegraph/
 AGENTS.md
+.sisyphus/
 
 # go
 bin/
@@ -20,7 +22,7 @@ web/node_modules/
 web/dist/
 
 # config
-config.json
+config/
 
 # test scripts
 test*

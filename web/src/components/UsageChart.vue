@@ -25,13 +25,12 @@
 import { computed } from 'vue'
 import { useI18n } from '../i18n'
 import { useAppStore } from '../stores/app'
+import { formatNumber } from '../utils/format'
 
 const appStore = useAppStore()
 const { t } = useI18n()
 
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat('zh-CN').format(value)
-}
+
 
 const rows = computed(() => {
   const entries = Object.entries(appStore.stats?.by_model ?? {})

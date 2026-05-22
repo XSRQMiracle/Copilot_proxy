@@ -28,6 +28,7 @@ export const messages: Record<Language, Record<string, Record<string, string>>> 
       failed: '失败请求',
       failedMetaNormal: '无异常',
       failedMetaAttention: '需要关注',
+      token: 'Token',
       tokenMeta: '输入 {prompt} / 输出 {completion}',
     },
     deviceAuth: {
@@ -73,6 +74,7 @@ export const messages: Record<Language, Record<string, Record<string, string>>> 
       time: '时间',
       protocol: '协议',
       model: '模型',
+      token: 'Token',
       status: '状态',
       duration: '耗时',
       success: '成功',
@@ -176,6 +178,7 @@ export const messages: Record<Language, Record<string, Record<string, string>>> 
       failed: 'Failed',
       failedMetaNormal: 'No issues',
       failedMetaAttention: 'Needs attention',
+      token: 'Token',
       tokenMeta: 'Input {prompt} / Output {completion}',
     },
     deviceAuth: {
@@ -221,6 +224,7 @@ export const messages: Record<Language, Record<string, Record<string, string>>> 
       time: 'Time',
       protocol: 'Protocol',
       model: 'Model',
+      token: 'Token',
       status: 'Status',
       duration: 'Duration',
       success: 'Success',

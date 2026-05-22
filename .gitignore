@@ -15,7 +15,8 @@ vendor/
 *.exe
 internal/web/dist/
 copilot-proxy
-copilot-proxy.exe
+*.exe
+*.exe~
 
 # node
 web/node_modules/
@@ -26,3 +27,8 @@ config/
 
 # test scripts
 test*
+
+
+# logs
+logs/
+*.log

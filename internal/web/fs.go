@@ -22,8 +22,6 @@ var (
 func DistFS() (fs.FS, string, error) {
 	distOnce.Do(func() {
 		distFS, distSource, distFromDisk, distErr = resolveDistFS()
-		_ = distSource
-		_ = distFromDisk
 	})
 	return distFS, distSource, distErr
 }

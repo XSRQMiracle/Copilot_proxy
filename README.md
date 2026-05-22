@@ -225,7 +225,6 @@ curl "http://localhost:15432/v1beta/models/gemini-pro:generateContent?key=dummy"
 - `POST /api/auth/login` — WebUI admin login
 - `POST /api/auth/device/start` — start device authorization flow
 - `POST /api/auth/device/poll` — poll device authorization status
-- `POST /api/auth/logout` — remove current account (legacy)
 
 ## Token Security
 

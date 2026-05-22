@@ -8,7 +8,7 @@
             <th>{{ t('requestTable.protocol') }}</th>
             <th>{{ t('requestTable.model') }}</th>
             <th>{{ t('requestTable.status') }}</th>
-            <th>Token</th>
+            <th>{{ t('requestTable.token') }}</th>
             <th>{{ t('requestTable.duration') }}</th>
           </tr>
         </thead>
@@ -56,6 +56,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from '../i18n'
 import { useAppStore } from '../stores/app'
+import { formatNumber } from '../utils/format'
 
 const appStore = useAppStore()
 const { t } = useI18n()
@@ -67,9 +68,7 @@ function toggle(id: number) {
   expandedId.value = expandedId.value === id ? null : id
 }
 
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat('zh-CN').format(value ?? 0)
-}
+
 
 function formatTime(value: string): string {
   const date = new Date(value)

@@ -219,7 +219,6 @@ curl "http://localhost:15432/v1beta/models/gemini-pro:generateContent?key=dummy"
 - `POST /api/auth/login` — WebUI 管理登录
 - `POST /api/auth/device/start` — 开始设备授权
 - `POST /api/auth/device/poll` — 轮询授权状态
-- `POST /api/auth/logout` — 移除当前账号（旧版）
 
 ## Token 安全
 

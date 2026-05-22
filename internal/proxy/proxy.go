@@ -183,19 +183,6 @@ func ensureStreamUsage(payload map[string]any) {
 	payload["stream_options"] = options
 }
 
-func copyResponse(w http.ResponseWriter, resp *http.Response) {
-	for k, values := range resp.Header {
-		if _, excluded := excludedResponseHeaders[strings.ToLower(k)]; excluded {
-			continue
-		}
-		for _, value := range values {
-			w.Header().Add(k, value)
-		}
-	}
-	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
-}
-
 func (h *Handler) copyAndRecordResponse(w http.ResponseWriter, resp *http.Response, record RequestRecord) {
 	record.Status = resp.StatusCode
 	if strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {

@@ -12,13 +12,10 @@
 import { computed } from 'vue'
 import { useI18n } from '../i18n'
 import { useAppStore } from '../stores/app'
+import { formatNumber } from '../utils/format'
 
 const appStore = useAppStore()
 const { t } = useI18n()
-
-function formatNumber(value: number | undefined): string {
-  return new Intl.NumberFormat('zh-CN').format(value ?? 0)
-}
 
 const successRate = computed(() => {
   const total = appStore.stats?.total_requests ?? 0
@@ -46,7 +43,7 @@ const cards = computed(() => [
     type: (appStore.stats?.failed ?? 0) > 0 ? 'error' : 'success',
   },
   {
-    label: 'Token',
+    label: t('dashboardCards.token'),
     value: formatNumber(appStore.stats?.total_tokens),
     meta: t('dashboardCards.tokenMeta', {
       prompt: formatNumber(appStore.stats?.prompt_tokens),

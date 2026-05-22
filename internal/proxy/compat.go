@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"io"
 	"net/http"
+	"strings"
 )
 
 func firstChoice(payload map[string]any) map[string]any {
@@ -24,7 +25,7 @@ func stringValue(value any) string {
 	return text
 }
 
-func numberValue(value any) any {
+func orZero(value any) any {
 	if value == nil {
 		return 0
 	}
@@ -61,7 +62,7 @@ func randomHex(length int) string {
 	}
 	raw := make([]byte, (length+1)/2)
 	if _, err := rand.Read(raw); err != nil {
-		return "000000000000000000000000"[:length]
+		return strings.Repeat("0", length)
 	}
 	return hex.EncodeToString(raw)[:length]
 }

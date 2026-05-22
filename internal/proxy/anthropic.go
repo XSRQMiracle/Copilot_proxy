@@ -166,8 +166,8 @@ func anthropicContentToText(content any) string {
 
 func anthropicUsageFromOpenAIUsage(usage map[string]any) map[string]any {
 	return map[string]any{
-		"input_tokens":  numberValue(usage["prompt_tokens"]),
-		"output_tokens": numberValue(usage["completion_tokens"]),
+		"input_tokens":  orZero(usage["prompt_tokens"]),
+		"output_tokens": orZero(usage["completion_tokens"]),
 	}
 }
 

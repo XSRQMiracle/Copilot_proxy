@@ -156,8 +156,6 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		a.startDevice(w, r)
 	case r.URL.Path == "/api/auth/device/poll" && r.Method == http.MethodPost:
 		a.pollDevice(w, r)
-	case r.URL.Path == "/api/auth/logout" && r.Method == http.MethodPost:
-		a.logout(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -474,19 +472,6 @@ func (a *App) pollDevice(w http.ResponseWriter, r *http.Request) {
 	a.deviceFlow = nil
 	a.deviceMu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"status": "authorized"})
-}
-
-func (a *App) logout(w http.ResponseWriter, r *http.Request) {
-	account := a.auth.ActiveAccount()
-	if account == nil {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-		return
-	}
-	if err := a.auth.RemoveAccount(r.Context(), account.ID); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (a *App) models(w http.ResponseWriter, r *http.Request) {

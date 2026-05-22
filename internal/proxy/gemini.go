@@ -209,9 +209,9 @@ func openAIToGeminiResponse(oaiData map[string]any) map[string]any {
 			},
 		},
 		"usageMetadata": map[string]any{
-			"promptTokenCount":     numberValue(usage["prompt_tokens"]),
-			"candidatesTokenCount": numberValue(usage["completion_tokens"]),
-			"totalTokenCount":      numberValue(usage["total_tokens"]),
+			"promptTokenCount":     orZero(usage["prompt_tokens"]),
+			"candidatesTokenCount": orZero(usage["completion_tokens"]),
+			"totalTokenCount":      orZero(usage["total_tokens"]),
 		},
 		"modelVersion": stringValue(oaiData["model"]),
 	}

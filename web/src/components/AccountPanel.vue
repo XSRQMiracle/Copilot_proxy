@@ -14,12 +14,7 @@
             </span>
           </template>
 
-          <n-thing :title="account.name || account.github_user_login || account.id">
-            <template #description>
-              <span class="account-desc">{{ account.github_user_login || t('accountPanel.githubUserPending') }}</span>
-              <span class="account-id">ID: {{ account.id }}</span>
-            </template>
-          </n-thing>
+          <n-thing :title="account.name || account.github_user_login || account.id" />
 
           <template #suffix>
             <div class="account-actions">
@@ -129,6 +124,8 @@ defineExpose({ refresh })
 <style scoped>
 .account-panel {
   width: 100%;
+  max-height: 360px;
+  overflow-y: auto;
 }
 
 .account-list {
@@ -164,17 +161,6 @@ defineExpose({ refresh })
 .badge-idle {
   background: var(--cp-color-border);
   color: var(--cp-color-text-muted);
-}
-
-.account-desc {
-  font-size: var(--cp-font-size-xs);
-  color: var(--cp-color-text-secondary);
-}
-
-.account-id {
-  font-size: var(--cp-font-size-xs);
-  color: var(--cp-color-text-muted);
-  margin-left: var(--cp-space-2);
 }
 
 .account-actions {

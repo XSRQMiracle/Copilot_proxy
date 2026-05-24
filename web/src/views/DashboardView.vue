@@ -8,7 +8,7 @@
       </n-alert>
 
       <template v-if="activeTab === 'overview'">
-        <div class="dashboard-grid overview-grid">
+        <div class="dashboard-grid">
           <div class="dash-card span-full">
             <div class="dash-card-body">
               <DashboardCards />
@@ -193,10 +193,6 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--cp-space-5);
-}
-
-.overview-grid {
-  grid-template-columns: 1fr 2fr;
 }
 
 .settings-grid {

@@ -25,9 +25,12 @@ web/dist/
 # config
 config/
 
-# test scripts
+# tmp
+test/
 test*
-
+tmp/
+*.tmp
+*.temp
 
 # logs
 logs/

@@ -1,91 +1,85 @@
 <template>
-  <main class="dashboard-shell">
-    <ConnectionBanner :connected="connected" />
-    <StatusBar />
+  <DashboardShell :connected="connected" :refreshing="refreshing" @refresh="refreshAll">
+    <DashboardRail :active-tab="activeTab" @tab-change="activeTab = $event" />
 
-    <header class="dashboard-hero">
-      <div class="hero-left">
-        <span class="hero-badge">Dashboard</span>
-        <h1 class="hero-title">Copilot Proxy</h1>
-      </div>
-      <div class="hero-right">
-        <span class="hero-dot" :class="appStore.serviceEnabled ? 'dot-on' : 'dot-off'" />
-        <span class="hero-status">{{ appStore.serviceEnabled ? t('dashboardView.serviceRunning') : t('dashboardView.servicePaused') }}</span>
-        <button class="hero-refresh" :class="{ 'is-spinning': refreshing }" @click="refreshAll">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="23 4 23 10 17 10" />
-            <polyline points="1 20 1 14 7 14" />
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-          </svg>
-        </button>
-      </div>
-    </header>
+    <section class="dashboard-content" data-testid="dashboard-content">
+      <n-alert v-if="loadError" type="error" closable @close="loadError = ''">
+        {{ loadError }}
+      </n-alert>
 
-    <n-alert v-if="loadError" type="error" closable @close="loadError = ''">
-      {{ loadError }}
-    </n-alert>
+      <template v-if="activeTab === 'overview'">
+        <div class="dashboard-grid overview-grid">
+          <div class="dash-card span-full">
+            <div class="dash-card-body">
+              <DashboardCards />
+            </div>
+          </div>
 
-    <div class="dashboard-body">
-      <aside class="dash-left">
+          <div class="dash-card">
+            <div class="dash-card-header">
+              <h2>{{ t('dashboardView.sectionAccounts') }}</h2>
+              <button class="dash-card-btn" @click="showDeviceAuth = true">+ GitHub</button>
+            </div>
+            <div class="dash-card-body">
+              <AccountPanel ref="accountPanelRef" @start-auth="showDeviceAuth = true" @switched="refreshAll" />
+            </div>
+          </div>
+
+          <div class="dash-card">
+            <div class="dash-card-header">
+              <h2>{{ t('dashboardView.sectionQuota') }}</h2>
+            </div>
+            <div class="dash-card-body">
+              <QuotaDisplay />
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template v-else-if="activeTab === 'settings'">
+        <div class="dashboard-grid settings-grid">
+          <div class="dash-card span-full">
+            <div class="dash-card-header">
+              <h2>{{ t('dashboardView.sectionSettings') }}</h2>
+            </div>
+            <div class="dash-card-body">
+              <SettingsForm @saved="refreshAll" />
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template v-else-if="activeTab === 'diagnostics'">
+        <DiagnosticsPanel />
+      </template>
+
+      <template v-else-if="activeTab === 'usage'">
+        <div class="dashboard-grid">
+          <div class="dash-card span-full">
+            <div class="dash-card-header">
+              <h2>{{ t('dashboardView.sectionUsage') }}</h2>
+            </div>
+            <div class="dash-card-body">
+              <UsageChart />
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template v-else>
         <div class="dash-card">
           <div class="dash-card-header">
-            <h2>{{ t('dashboardView.sectionAccounts') }}</h2>
-            <button class="dash-card-btn" @click="showDeviceAuth = true">+ GitHub</button>
+            <h2>{{ t('dashboardView.sectionRequests') }}</h2>
           </div>
-          <div class="dash-card-body">
-            <AccountPanel ref="accountPanelRef" @start-auth="showDeviceAuth = true" @switched="refreshAll" />
-          </div>
-        </div>
-
-        <div class="dash-card">
-          <div class="dash-card-header">
-            <h2>{{ t('dashboardView.sectionSettings') }}</h2>
-          </div>
-          <div class="dash-card-body">
-            <SettingsForm @saved="refreshAll" />
+          <div class="dash-card-body logs-scroll-container">
+            <RequestTable />
           </div>
         </div>
-
-      </aside>
-
-      <section class="dash-right">
-        <div class="dash-card">
-          <div class="dash-card-body">
-            <DashboardCards />
-          </div>
-        </div>
-
-        <div class="dash-card">
-          <div class="dash-card-header">
-            <h2>{{ t('dashboardView.sectionQuota') }}</h2>
-          </div>
-          <div class="dash-card-body">
-            <QuotaDisplay />
-          </div>
-        </div>
-
-        <div class="dash-card">
-          <div class="dash-card-header">
-            <h2>{{ t('dashboardView.sectionUsage') }}</h2>
-          </div>
-          <div class="dash-card-body">
-            <UsageChart />
-          </div>
-        </div>
-      </section>
-    </div>
-
-    <div class="dash-card dash-table-section">
-      <div class="dash-card-header">
-        <h2>{{ t('dashboardView.sectionRequests') }}</h2>
-      </div>
-      <div class="dash-card-body">
-        <RequestTable />
-      </div>
-    </div>
+      </template>
+    </section>
 
     <DeviceAuth v-model:show="showDeviceAuth" @authorized="handleAuthorized" />
-  </main>
+  </DashboardShell>
 </template>
 
 <script setup lang="ts">
@@ -94,20 +88,23 @@ import { useMessage } from 'naive-ui'
 import { configApi, quotaApi, statsApi, statusApi } from '../api'
 import { useI18n } from '../i18n'
 import { useAppStore } from '../stores/app'
-import ConnectionBanner from '../components/ConnectionBanner.vue'
-import StatusBar from '../components/StatusBar.vue'
 import AccountPanel from '../components/AccountPanel.vue'
-import DeviceAuth from '../components/DeviceAuth.vue'
 import DashboardCards from '../components/DashboardCards.vue'
+import { type DashboardTab } from '../views/dashboard-tabs'
+import DashboardRail from '../components/DashboardRail.vue'
+import DashboardShell from '../components/DashboardShell.vue'
+import DeviceAuth from '../components/DeviceAuth.vue'
+import DiagnosticsPanel from '../components/DiagnosticsPanel.vue'
 import QuotaDisplay from '../components/QuotaDisplay.vue'
-import UsageChart from '../components/UsageChart.vue'
-import SettingsForm from '../components/SettingsForm.vue'
 import RequestTable from '../components/RequestTable.vue'
+import SettingsForm from '../components/SettingsForm.vue'
+import UsageChart from '../components/UsageChart.vue'
 
 const appStore = useAppStore()
 const message = useMessage()
 const { t } = useI18n()
 
+const activeTab = ref<DashboardTab>('overview')
 const refreshing = ref(false)
 const loadError = ref('')
 const showDeviceAuth = ref(false)
@@ -183,132 +180,33 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.dashboard-shell {
-  min-height: 100vh;
-  padding: var(--cp-space-6);
-  background-color: var(--cp-color-bg);
-  background-image:
-    radial-gradient(ellipse 80% 60% at 0% 20%, var(--cp-color-primary-soft) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 50% at 100% 80%, var(--cp-color-warning-soft) 0%, transparent 60%),
-    var(--cp-wallpaper-url);
-  background-size: auto, auto, cover;
-  background-position: 0 0, 0 0, center;
-  background-repeat: repeat, repeat, no-repeat;
-  background-attachment: scroll, scroll, fixed;
-}
-
-/* Hero */
-.dashboard-hero {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin: var(--cp-space-4) 0 var(--cp-space-6);
-}
-
-.hero-left {
-  display: flex;
-  flex-direction: column;
-  gap: var(--cp-space-2);
-}
-
-.hero-badge {
-  font-size: var(--cp-font-size-xs);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--cp-color-primary);
-}
-
-.hero-title {
-  margin: 0;
-  font-size: clamp(var(--cp-font-size-xl), 2.5vw, 36px);
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  color: var(--cp-color-text);
-}
-
-.hero-right {
-  display: flex;
-  align-items: center;
-  gap: var(--cp-space-2);
-}
-
-.hero-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  transition: background var(--cp-transition-med);
-}
-
-.dot-on {
-  background: var(--cp-color-success);
-  box-shadow: 0 0 8px var(--cp-color-success);
-}
-
-.dot-off {
-  background: var(--cp-color-error);
-  box-shadow: 0 0 8px var(--cp-color-error);
-}
-
-.hero-status {
-  font-size: var(--cp-font-size-sm);
-  color: var(--cp-color-text-secondary);
-}
-
-.hero-refresh {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--cp-color-border);
-  border-radius: var(--cp-radius-sm);
-  background: var(--cp-color-surface);
-  color: var(--cp-color-text);
-  cursor: pointer;
-  transition: all var(--cp-transition-fast);
-  margin-left: var(--cp-space-2);
-  outline: none;
-}
-
-.hero-refresh:hover {
-  border-color: var(--cp-color-primary);
-  color: var(--cp-color-primary);
-  background: var(--cp-color-primary-soft);
-}
-
-.hero-refresh.is-spinning svg {
-  animation: spin 0.6s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* Body: left-right layout */
-.dashboard-body {
-  display: flex;
-  gap: var(--cp-space-5);
-  align-items: start;
-}
-
-.dash-left {
-  flex: 0 0 34%;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--cp-space-5);
-}
-
-.dash-right {
+.dashboard-content {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: var(--cp-space-5);
+  overflow-y: auto;
 }
 
-/* Unified card component */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--cp-space-5);
+}
+
+.overview-grid {
+  grid-template-columns: 1fr 2fr;
+}
+
+.settings-grid {
+  align-items: start;
+}
+
+.span-full {
+  grid-column: 1 / -1;
+}
+
 .dash-card {
   background: var(--cp-color-surface);
   border: 1px solid var(--cp-color-border);
@@ -347,8 +245,8 @@ onUnmounted(() => {
   background: transparent;
   color: var(--cp-color-primary);
   cursor: pointer;
-  transition: all var(--cp-transition-fast);
   outline: none;
+  transition: all var(--cp-transition-fast);
 }
 
 .dash-card-btn:hover {
@@ -359,32 +257,23 @@ onUnmounted(() => {
   padding: var(--cp-space-4) var(--cp-space-5) var(--cp-space-5);
 }
 
-.dash-table-section {
-  margin-top: var(--cp-space-5);
+.logs-scroll-container {
+  max-height: 65vh;
+  overflow-y: auto;
 }
 
-/* Responsive: stack on narrow screens */
+.placeholder-body {
+  min-height: 220px;
+  color: var(--cp-color-text-secondary);
+}
+
+.placeholder-body p {
+  margin: 0;
+}
+
 @media (max-width: 1024px) {
-  .dashboard-body {
-    flex-direction: column;
-  }
-
-  .dash-left,
-  .dash-right {
-    flex: 1;
-    width: 100%;
-  }
-}
-
-@media (max-width: 640px) {
-  .dashboard-shell {
-    padding: var(--cp-space-4);
-  }
-
-  .dashboard-hero {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--cp-space-3);
+  .dashboard-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

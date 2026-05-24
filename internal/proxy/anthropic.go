@@ -15,29 +15,74 @@ var anthropicFinishReasonMap = map[string]string{
 	"content_filter": "content_filter",
 }
 
+var anthropicModelMap = map[string]string{
+	"claude-opus-4-7":            "claude-opus-4.7",
+	"claude-opus-4.7":            "claude-opus-4.7",
+	"claude-sonnet-4-6":          "claude-sonnet-4.6",
+	"claude-sonnet-4.6":          "claude-sonnet-4.6",
+	"claude-opus-4-6":            "claude-opus-4.6",
+	"claude-opus-4.6":            "claude-opus-4.6",
+	"claude-haiku-4-5":           "claude-haiku-4.5",
+	"claude-haiku-4.5":           "claude-haiku-4.5",
+	"claude-haiku-4-5-20251001":  "claude-haiku-4.5",
+	"claude-sonnet-4-5":          "claude-sonnet-4.5",
+	"claude-sonnet-4.5":          "claude-sonnet-4.5",
+	"claude-sonnet-4-5-20250929": "claude-sonnet-4.5",
+	"claude-opus-4-5":            "claude-opus-4.5",
+	"claude-opus-4.5":            "claude-opus-4.5",
+	"claude-opus-4-5-20251101":   "claude-opus-4.5",
+	"claude-opus-4-1":            "claude-opus-4.1",
+	"claude-opus-4.1":            "claude-opus-4.1",
+	"claude-opus-4-1-20250805":   "claude-opus-4.1",
+	"claude-sonnet-4-0":          "claude-sonnet-4.0",
+	"claude-sonnet-4.0":          "claude-sonnet-4.0",
+	"claude-sonnet-4-20250514":   "claude-sonnet-4.0",
+	"claude-opus-4-0":            "claude-opus-4.0",
+	"claude-opus-4.0":            "claude-opus-4.0",
+	"claude-opus-4-20250514":     "claude-opus-4.0",
+	"claude-3-7-sonnet-latest":   "claude-3.7-sonnet",
+	"claude-3-7-sonnet-20250219": "claude-3.7-sonnet",
+	"claude-3.7-sonnet":          "claude-3.7-sonnet",
+	"claude-3-5-sonnet-latest":   "claude-3.5-sonnet",
+	"claude-3-5-sonnet-20241022": "claude-3.5-sonnet",
+	"claude-3-5-sonnet-20240620": "claude-3.5-sonnet",
+	"claude-3.5-sonnet":          "claude-3.5-sonnet",
+	"claude-3-5-haiku-latest":    "claude-3.5-haiku",
+	"claude-3-5-haiku-20241022":  "claude-3.5-haiku",
+	"claude-3-5-haiku":           "claude-3.5-haiku",
+	"claude-3.5-haiku":           "claude-3.5-haiku",
+	"claude-3-opus-latest":       "claude-3-opus",
+	"claude-3-opus-20240229":     "claude-3-opus",
+	"claude-3-opus":              "claude-3-opus",
+	"claude-3-sonnet-20240229":   "claude-3-sonnet",
+	"claude-3-sonnet":            "claude-3-sonnet",
+	"claude-3-haiku-20240307":    "claude-3-haiku",
+	"claude-3-haiku":             "claude-3-haiku",
+}
+
 func (h *Handler) ServeAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
-		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Status: http.StatusMethodNotAllowed, Error: "method not allowed"})
+		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Status: http.StatusMethodNotAllowed, DurationMs: time.Since(start).Milliseconds(), Error: "method not allowed"})
 		return
 	}
 	if h.proxyDisabled() {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "proxy service is disabled"})
-		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Status: http.StatusServiceUnavailable, Error: "proxy disabled"})
+		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Status: http.StatusServiceUnavailable, DurationMs: time.Since(start).Milliseconds(), Error: "proxy disabled"})
 		return
 	}
 	if !h.authorized(r) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid api key"})
-		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Status: http.StatusUnauthorized, Error: "invalid api key"})
+		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Status: http.StatusUnauthorized, DurationMs: time.Since(start).Milliseconds(), Error: "invalid api key"})
 		return
 	}
 
 	token := h.auth.CopilotToken()
 	if token == "" {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Copilot token 未就绪，请检查授权状态"})
-		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Status: http.StatusServiceUnavailable, Error: "missing copilot token"})
+		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Status: http.StatusServiceUnavailable, DurationMs: time.Since(start).Milliseconds(), Error: "missing copilot token"})
 		return
 	}
 
@@ -45,12 +90,12 @@ func (h *Handler) ServeAnthropicMessages(w http.ResponseWriter, r *http.Request)
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "无效的 JSON 请求体"})
-		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Status: http.StatusBadRequest, Error: "invalid json"})
+		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Status: http.StatusBadRequest, DurationMs: time.Since(start).Milliseconds(), Error: "invalid json"})
 		return
 	}
 	if _, ok := payload["messages"]; !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "缺少必填字段: messages"})
-		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(payload["model"]), Status: http.StatusBadRequest, Error: "missing messages"})
+		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(payload["model"]), Status: http.StatusBadRequest, DurationMs: time.Since(start).Milliseconds(), Error: "missing messages"})
 		return
 	}
 
@@ -61,7 +106,12 @@ func (h *Handler) ServeAnthropicMessages(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	oaiPayload := anthropicToOpenAI(payload)
+	oaiPayload, err := anthropicToOpenAI(payload)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: model, Status: http.StatusBadRequest, DurationMs: time.Since(start).Milliseconds(), Error: err.Error()})
+		return
+	}
 	if stream, _ := payload["stream"].(bool); stream {
 		oaiPayload["stream"] = true
 		ensureStreamUsage(oaiPayload)
@@ -72,14 +122,14 @@ func (h *Handler) ServeAnthropicMessages(w http.ResponseWriter, r *http.Request)
 	body, err := json.Marshal(oaiPayload)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: http.StatusBadRequest, Error: err.Error()})
+		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: http.StatusBadRequest, DurationMs: time.Since(start).Milliseconds(), Error: err.Error()})
 		return
 	}
 	copilotURL := h.chatCompletionsURL()
 	resp, err := h.forward(r.Context(), http.MethodPost, copilotURL, token, "application/json", body)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: http.StatusBadGateway, Error: err.Error()})
+		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: http.StatusBadGateway, DurationMs: time.Since(start).Milliseconds(), Error: err.Error()})
 		return
 	}
 	defer resp.Body.Close()
@@ -87,14 +137,14 @@ func (h *Handler) ServeAnthropicMessages(w http.ResponseWriter, r *http.Request)
 	if resp.StatusCode != http.StatusOK {
 		body := readErrorPreview(resp)
 		anthropicError(w, resp.StatusCode, body)
-		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: resp.StatusCode, Error: body})
+		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: resp.StatusCode, DurationMs: time.Since(start).Milliseconds(), Error: body})
 		return
 	}
 
 	var oaiData map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&oaiData); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: http.StatusBadGateway, Error: err.Error()})
+		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: http.StatusBadGateway, DurationMs: time.Since(start).Milliseconds(), Error: err.Error()})
 		return
 	}
 	record := RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: http.StatusOK, DurationMs: time.Since(start).Milliseconds()}
@@ -108,37 +158,52 @@ func (h *Handler) ServeAnthropicMessages(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, openAIToAnthropicResponse(oaiData))
 }
 
-func anthropicToOpenAI(payload map[string]any) map[string]any {
+func anthropicToOpenAI(payload map[string]any) (map[string]any, error) {
+	model, err := normalizeAnthropicModel(stringValue(payload["model"]))
+	if err != nil {
+		return nil, err
+	}
+
 	messages := make([]map[string]any, 0)
 	if system, ok := payload["system"]; ok && system != nil {
-		if text := anthropicContentToText(system); text != "" {
+		text, err := anthropicContentToText(system)
+		if err != nil {
+			return nil, err
+		}
+		if text != "" {
 			messages = append(messages, map[string]any{"role": "system", "content": text})
 		}
 	}
-	if rawMessages, ok := payload["messages"].([]any); ok {
-		for _, item := range rawMessages {
-			msg, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			role, _ := msg["role"].(string)
-			if role == "" {
-				role = "user"
-			}
-			// 角色映射：Anthropic "assistant" → OpenAI "assistant"，其余映射为 "user"
-			// 之前 Bug: 所有非 assistant 角色（包括正确的 "user"）都被强制映射成了 "user"，没有走这个分支
-			if role != "user" && role != "assistant" {
-				role = "user"
-			}
-			messages = append(messages, map[string]any{
-				"role":    role,
-				"content": anthropicContentToText(msg["content"]),
-			})
+	rawMessages, ok := payload["messages"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("invalid Anthropic messages: expected array, got %T", payload["messages"])
+	}
+	for _, item := range rawMessages {
+		msg, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("invalid Anthropic message: expected object, got %T", item)
 		}
+		role, _ := msg["role"].(string)
+		if role == "" {
+			role = "user"
+		}
+		// 角色映射：Anthropic "assistant" → OpenAI "assistant"，其余映射为 "user"
+		// 之前 Bug: 所有非 assistant 角色（包括正确的 "user"）都被强制映射成了 "user"，没有走这个分支
+		if role != "user" && role != "assistant" {
+			role = "user"
+		}
+		content, err := anthropicContentToText(msg["content"])
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, map[string]any{
+			"role":    role,
+			"content": content,
+		})
 	}
 
 	result := map[string]any{
-		"model":      stringValue(payload["model"]),
+		"model":      model,
 		"messages":   messages,
 		"max_tokens": valueOrDefault(payload, "max_tokens", float64(4096)),
 		"stream":     valueOrDefault(payload, "stream", false),
@@ -147,27 +212,44 @@ func anthropicToOpenAI(payload map[string]any) map[string]any {
 	copyIfPresent(result, payload, "top_p", "top_p")
 	copyIfPresent(result, payload, "stop_sequences", "stop")
 	copyIfPresent(result, payload, "metadata", "metadata")
-	return result
+	return result, nil
 }
 
-func anthropicContentToText(content any) string {
+func normalizeAnthropicModel(model string) (string, error) {
+	if extractVendor(model) != "" {
+		return model, nil
+	}
+	canonical, ok := anthropicModelMap[strings.ToLower(model)]
+	if !ok {
+		return "", fmt.Errorf("unsupported Anthropic model: %s", model)
+	}
+	return canonical, nil
+}
+
+func anthropicContentToText(content any) (string, error) {
 	switch v := content.(type) {
 	case string:
-		return v
+		return v, nil
 	case []any:
 		texts := make([]string, 0, len(v))
 		for _, item := range v {
 			block, ok := item.(map[string]any)
 			if !ok {
-				continue
+				return "", fmt.Errorf("invalid Anthropic content block: expected object, got %T", item)
 			}
-			if blockType, _ := block["type"].(string); blockType == "text" {
-				texts = append(texts, stringValue(block["text"]))
+			blockType, _ := block["type"].(string)
+			if blockType != "text" {
+				return "", fmt.Errorf("unsupported Anthropic content type: %s", blockType)
 			}
+			textVal, ok := block["text"].(string)
+			if !ok {
+				return "", fmt.Errorf("invalid Anthropic text block: 'text' field is missing or not a string")
+			}
+			texts = append(texts, textVal)
 		}
-		return strings.Join(texts, "\n")
+		return strings.Join(texts, "\n"), nil
 	default:
-		return ""
+		return "", fmt.Errorf("invalid Anthropic content: expected string or array, got %T", v)
 	}
 }
 
@@ -206,21 +288,22 @@ func (h *Handler) serveAnthropicStream(w http.ResponseWriter, r *http.Request, t
 	body, err := json.Marshal(oaiPayload)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: http.StatusBadRequest, Error: err.Error()})
+		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: http.StatusBadRequest, DurationMs: time.Since(start).Milliseconds(), Error: err.Error()})
 		return
 	}
 	copilotURL := h.chatCompletionsURL()
 	resp, err := h.forward(r.Context(), http.MethodPost, copilotURL, token, "application/json", body)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: http.StatusBadGateway, Error: err.Error()})
+		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: http.StatusBadGateway, DurationMs: time.Since(start).Milliseconds(), Error: err.Error()})
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		anthropicError(w, resp.StatusCode, readErrorPreview(resp))
-		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: resp.StatusCode, Error: "upstream error"})
+		body := readErrorPreview(resp)
+		anthropicError(w, resp.StatusCode, body)
+		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: stringValue(oaiPayload["model"]), Status: resp.StatusCode, DurationMs: time.Since(start).Milliseconds(), Error: body})
 		return
 	}
 

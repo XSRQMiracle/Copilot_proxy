@@ -186,10 +186,15 @@ onUnmounted(() => {
 .dashboard-shell {
   min-height: 100vh;
   padding: var(--cp-space-6);
-  background:
+  background-color: var(--cp-color-bg);
+  background-image:
     radial-gradient(ellipse 80% 60% at 0% 20%, var(--cp-color-primary-soft) 0%, transparent 60%),
     radial-gradient(ellipse 60% 50% at 100% 80%, var(--cp-color-warning-soft) 0%, transparent 60%),
-    var(--cp-color-bg);
+    var(--cp-wallpaper-url);
+  background-size: auto, auto, cover;
+  background-position: 0 0, 0 0, center;
+  background-repeat: repeat, repeat, no-repeat;
+  background-attachment: scroll, scroll, fixed;
 }
 
 /* Hero */

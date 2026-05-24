@@ -53,8 +53,8 @@ const naiveDateLocale = computed(() => {
   --cp-font-size-2xl: 32px;
 
   --cp-color-bg: #f4f7fb;
-  --cp-color-surface: rgba(255, 255, 255, 0.86);
-  --cp-color-card: #ffffff;
+  --cp-color-surface: rgba(255, 255, 255, 0.55);
+  --cp-color-card: rgba(255, 255, 255, 0.72);
   --cp-color-border: rgba(23, 35, 61, 0.1);
   --cp-color-text: #1f2937;
   --cp-color-text-secondary: rgba(31, 41, 55, 0.72);
@@ -72,12 +72,13 @@ const naiveDateLocale = computed(() => {
   --cp-shadow-float: 0 12px 48px rgba(20, 30, 54, 0.12);
   --cp-transition-fast: 160ms ease;
   --cp-transition-med: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  --cp-wallpaper-url: url('/background/light.png');
 }
 
 :root[data-theme='dark'] {
   --cp-color-bg: #080e1a;
-  --cp-color-surface: rgba(18, 26, 44, 0.82);
-  --cp-color-card: #111b30;
+  --cp-color-surface: rgba(18, 26, 44, 0.45);
+  --cp-color-card: rgba(18, 26, 44, 0.6);
   --cp-color-border: rgba(255, 255, 255, 0.08);
   --cp-color-text: rgba(235, 238, 245, 0.94);
   --cp-color-text-secondary: rgba(235, 238, 245, 0.7);
@@ -90,6 +91,7 @@ const naiveDateLocale = computed(() => {
   --cp-color-error-soft: rgba(208, 48, 80, 0.15);
   --cp-shadow-card: 0 2px 20px rgba(0, 0, 0, 0.28);
   --cp-shadow-float: 0 16px 56px rgba(0, 0, 0, 0.36);
+  --cp-wallpaper-url: url('/background/dark.png');
 }
 
 html, body, #app {

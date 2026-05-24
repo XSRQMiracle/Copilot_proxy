@@ -83,6 +83,8 @@ func (a *App) route(w http.ResponseWriter, r *http.Request) {
 		a.api(w, r)
 	case r.URL.Path == "/favicon.ico":
 		a.serveFavicon(w, r)
+	case strings.HasPrefix(r.URL.Path, "/background/"):
+		a.serveBackground(w, r)
 	case strings.HasPrefix(r.URL.Path, "/ui") || r.URL.Path == "/ui":
 		a.serveFrontend(w, r)
 	default:
@@ -817,6 +819,25 @@ func (a *App) serveFavicon(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "max-age=86400, public")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
+}
+
+func (a *App) serveBackground(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	filename := path.Clean(strings.TrimPrefix(r.URL.Path, "/background/"))
+	if filename == "" || strings.Contains(filename, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	filePath := web.ServeBackgroundPath(filename)
+	if filePath == "" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+	http.ServeFile(w, r, filePath)
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

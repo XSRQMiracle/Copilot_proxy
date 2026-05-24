@@ -71,8 +71,8 @@ const { t } = useI18n()
   border: 1px solid var(--cp-color-border);
   border-radius: var(--cp-radius-lg);
   background: var(--cp-color-surface);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(3px) saturate(180%) brightness(1.06);
+  -webkit-backdrop-filter: blur(3px) saturate(180%) brightness(1.06);
   overflow: hidden;
   box-shadow: var(--cp-shadow-card);
   transition: box-shadow var(--cp-transition-med);

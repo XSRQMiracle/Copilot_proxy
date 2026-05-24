@@ -14,6 +14,33 @@ export interface Account {
   github_token?: string
 }
 
+export interface ModelInfo {
+  id: string
+  name?: string
+  vendor?: string
+  capabilities?: Record<string, boolean>
+  object?: string
+  created?: number
+  owned_by?: string
+}
+
+export interface ModelsResponse {
+  data: ModelInfo[]
+  object?: string
+}
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+  attachments?: { type: string; data: string; name: string }[]
+}
+
+export interface ChatTestRequest {
+  model: string
+  messages: ChatMessage[]
+  stream?: boolean
+}
+
 export interface Config {
   server: { host: string; port: number; read_timeout_seconds: number; write_timeout_seconds: number }
   github: Record<string, string>
@@ -201,4 +228,20 @@ export const serviceApi = {
     headers: authHeaders(),
     body: JSON.stringify({ enabled }),
   }),
+}
+
+export const chatApi = {
+  models: () => api<ModelsResponse>('/api/models', { headers: authHeaders() }),
+  test: (body: ChatTestRequest) => {
+    const token = getAuthToken()
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+    return fetch('/api/chat/test', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    })
+  },
 }

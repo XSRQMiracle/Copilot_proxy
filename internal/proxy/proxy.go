@@ -88,6 +88,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	body = cleanBody(body)
 	model := modelFromJSONBody(body)
+	if !h.checkModelAllowed(model) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": ModelNotAllowedError(model)})
+		h.record(RequestRecord{Time: start, Protocol: "openai", Method: r.Method, Path: r.URL.Path, Model: model, Status: http.StatusForbidden, DurationMs: time.Since(start).Milliseconds(), Error: ModelNotAllowedError(model)})
+		return
+	}
 
 	resp, err := h.forward(r.Context(), r.Method, upstreamURL, token, r.Header.Get("Content-Type"), body)
 	if err != nil {
@@ -203,7 +208,8 @@ func (h *Handler) copyAndRecordResponse(w http.ResponseWriter, resp *http.Respon
 			_, _ = fmt.Fprintln(w, line)
 			flush(flusher)
 			if strings.HasPrefix(line, "data: ") {
-				data := strings.TrimSpace(strings.TrimPrefix(line, "data: "))
+				_, data, _ := strings.Cut(line, "data: ")
+				data = strings.TrimSpace(data)
 				if data != "" && data != "[DONE]" {
 					var chunk map[string]any
 					if err := json.Unmarshal([]byte(data), &chunk); err == nil {
@@ -299,6 +305,41 @@ func (h *Handler) record(record RequestRecord) {
 	if h.stats != nil {
 		h.stats.Record(record)
 	}
+}
+
+func (h *Handler) ServeChatTest(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+
+	token := h.auth.CopilotToken()
+	if token == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Copilot token not ready"})
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	body = cleanBody(body)
+
+	model := modelFromJSONBody(body)
+	if !h.checkModelAllowed(model) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": ModelNotAllowedError(model)})
+		h.record(RequestRecord{Time: start, Protocol: "openai", Method: "POST", Path: "/api/chat/test", Model: model, Status: http.StatusForbidden, DurationMs: time.Since(start).Milliseconds(), Error: ModelNotAllowedError(model)})
+		return
+	}
+
+	resp, err := h.forward(r.Context(), "POST", h.chatCompletionsURL(), token, "application/json", body)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		h.record(RequestRecord{Time: start, Protocol: "openai", Method: "POST", Path: "/api/chat/test", Model: model, Status: http.StatusBadGateway, DurationMs: time.Since(start).Milliseconds(), Error: err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	h.copyAndRecordResponse(w, resp, RequestRecord{Time: start, Protocol: "openai", Method: "POST", Path: "/api/chat/test", Model: model})
 }
 
 func modelFromJSONBody(body []byte) string {

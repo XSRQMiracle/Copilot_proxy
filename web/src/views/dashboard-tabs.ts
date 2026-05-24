@@ -9,7 +9,7 @@ export interface TabDefinition {
 export const tabs: TabDefinition[] = [
   { slug: 'overview', labelKey: 'dashboardTabs.overview', icon: '' },
   { slug: 'settings', labelKey: 'dashboardTabs.settings', icon: '' },
-  { slug: 'diagnostics', labelKey: 'dashboardTabs.diagnostics', icon: '' },
+  { slug: 'diagnostics', labelKey: 'dashboardTabs.dialogTest', icon: '' },
   { slug: 'usage', labelKey: 'dashboardTabs.usage', icon: '' },
   { slug: 'logs', labelKey: 'dashboardTabs.logs', icon: '' },
 ]

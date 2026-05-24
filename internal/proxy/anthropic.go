@@ -54,6 +54,13 @@ func (h *Handler) ServeAnthropicMessages(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	model := stringValue(payload["model"])
+	if !h.checkModelAllowed(model) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": ModelNotAllowedError(model)})
+		h.record(RequestRecord{Time: start, Protocol: "anthropic", Method: r.Method, Path: r.URL.Path, Model: model, Status: http.StatusForbidden, DurationMs: time.Since(start).Milliseconds(), Error: ModelNotAllowedError(model)})
+		return
+	}
+
 	oaiPayload := anthropicToOpenAI(payload)
 	if stream, _ := payload["stream"].(bool); stream {
 		oaiPayload["stream"] = true

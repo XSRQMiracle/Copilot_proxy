@@ -50,7 +50,7 @@
       </template>
 
       <template v-else-if="activeTab === 'diagnostics'">
-        <DiagnosticsPanel />
+        <ChatTestPanel />
       </template>
 
       <template v-else-if="activeTab === 'usage'">
@@ -94,7 +94,7 @@ import { type DashboardTab } from '../views/dashboard-tabs'
 import DashboardRail from '../components/DashboardRail.vue'
 import DashboardShell from '../components/DashboardShell.vue'
 import DeviceAuth from '../components/DeviceAuth.vue'
-import DiagnosticsPanel from '../components/DiagnosticsPanel.vue'
+import ChatTestPanel from '../components/ChatTestPanel.vue'
 import QuotaDisplay from '../components/QuotaDisplay.vue'
 import RequestTable from '../components/RequestTable.vue'
 import SettingsForm from '../components/SettingsForm.vue'

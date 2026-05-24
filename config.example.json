@@ -26,7 +26,8 @@
     "admin_password": "admin"
   },
   "runtime": {
-    "proxy_disabled": false
+    "proxy_disabled": false,
+    "denied_vendors": ["github-copilot"]
   },
   "auth": {
     "active_account_id": "",

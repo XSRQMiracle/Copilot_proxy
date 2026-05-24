@@ -58,7 +58,8 @@ type SecurityConfig struct {
 }
 
 type RuntimeConfig struct {
-	ProxyDisabled bool `json:"proxy_disabled"`
+	ProxyDisabled bool     `json:"proxy_disabled"`
+	DeniedVendors []string `json:"denied_vendors,omitempty"`
 }
 
 type AccountConfig struct {
@@ -106,7 +107,7 @@ func Default() Config {
 			APIKey:          "dummy",
 			AdminPassword:   "admin",
 		},
-		Runtime: RuntimeConfig{ProxyDisabled: false},
+		Runtime: RuntimeConfig{ProxyDisabled: false, DeniedVendors: []string{"github-copilot"}},
 		Auth: AuthConfig{
 			ActiveAccountID: "",
 			Accounts:        []AccountConfig{},
@@ -289,6 +290,17 @@ func (c Config) HasAdminPassword() bool {
 	return strings.TrimSpace(c.Security.AdminPassword) != ""
 }
 
+// IsVendorDenied 检查 vendor 是否以 DeniedVendors 中任意一项为前缀（不区分大小写）。
+func (c *Config) IsVendorDenied(vendor string) bool {
+	vendor = strings.ToLower(vendor)
+	for _, denied := range c.Runtime.DeniedVendors {
+		if strings.HasPrefix(vendor, strings.ToLower(denied)) {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Config) applyDefaults() {
 	d := Default()
 	if c.Server.Host == "" {
@@ -347,6 +359,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.UI.Theme == "" {
 		c.UI.Theme = d.UI.Theme
+	}
+	if c.Runtime.DeniedVendors == nil {
+		c.Runtime.DeniedVendors = d.Runtime.DeniedVendors
 	}
 }
 

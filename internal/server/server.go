@@ -60,7 +60,8 @@ type responseWriterWrapper struct {
 func (w responseWriterWrapper) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	isSSE := r.URL.Path == "/v1/chat/completions" ||
 		r.URL.Path == "/v1/messages" ||
-		strings.HasPrefix(r.URL.Path, "/v1beta/models/")
+		strings.HasPrefix(r.URL.Path, "/v1beta/models/") ||
+		r.URL.Path == "/api/chat/test"
 	if isSSE {
 		rw.Header().Set("X-Accel-Buffering", "no")
 	}
@@ -154,6 +155,8 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		a.switchAccount(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/accounts/") && r.Method == http.MethodDelete:
 		a.deleteAccount(w, r)
+	case r.URL.Path == "/api/chat/test" && r.Method == http.MethodPost:
+		a.proxy.ServeChatTest(w, r)
 	case r.URL.Path == "/api/auth/device/start" && r.Method == http.MethodPost:
 		a.startDevice(w, r)
 	case r.URL.Path == "/api/auth/device/poll" && r.Method == http.MethodPost:
@@ -501,12 +504,52 @@ func (a *App) models(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
-	var payload any
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	var raw any
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, resp.StatusCode, payload)
+	writeJSON(w, resp.StatusCode, a.filterModels(raw))
+}
+
+// filterModels 从 models API 响应中移除 DeniedVendors 下的模型。
+func (a *App) filterModels(raw any) any {
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		return raw
+	}
+	data, ok := obj["data"]
+	if !ok {
+		return raw
+	}
+	models, ok := data.([]any)
+	if !ok {
+		return raw
+	}
+
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	filtered := make([]any, 0, len(models))
+	for _, m := range models {
+		modelObj, ok := m.(map[string]any)
+		if !ok {
+			filtered = append(filtered, m)
+			continue
+		}
+		id, _ := modelObj["id"].(string)
+		if id == "" {
+			name, _ := modelObj["name"].(string)
+			id = name
+		}
+		if id != "" && !proxy.IsModelAllowed(id, a.cfg) {
+			continue
+		}
+		filtered = append(filtered, m)
+	}
+
+	obj["data"] = filtered
+	return obj
 }
 
 func (a *App) quota(w http.ResponseWriter, r *http.Request) {

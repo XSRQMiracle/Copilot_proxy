@@ -47,6 +47,11 @@ func (h *Handler) ServeGeminiModels(w http.ResponseWriter, r *http.Request, gemi
 		h.record(RequestRecord{Time: start, Protocol: "gemini", Method: r.Method, Path: r.URL.Path, Status: http.StatusBadRequest, Error: "invalid path"})
 		return
 	}
+	if !h.checkModelAllowed(model) {
+		geminiError(w, http.StatusForbidden, ModelNotAllowedError(model))
+		h.record(RequestRecord{Time: start, Protocol: "gemini", Method: r.Method, Path: r.URL.Path, Model: model, Status: http.StatusForbidden, DurationMs: time.Since(start).Milliseconds(), Error: ModelNotAllowedError(model)})
+		return
+	}
 
 	var payload map[string]any
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)

@@ -1,36 +1,31 @@
 <template>
   <div class="account-panel">
     <n-spin :show="loading">
-      <n-list v-if="accounts.length" class="account-list" hoverable clickable>
-        <n-list-item
-          v-for="account in accounts"
-          :key="account.id"
-          class="account-item"
-          :class="{ 'account-item--active': account.id === activeAccountId }"
-        >
-          <template #prefix>
-            <span class="account-badge" :class="account.id === activeAccountId ? 'badge-active' : 'badge-idle'">
-              {{ account.id === activeAccountId ? t('accountPanel.current') : t('accountPanel.standby') }}
-            </span>
-          </template>
+      <div v-if="accounts.length" class="account-list">
+        <article v-for="account in accounts" :key="account.id" class="account-item">
+          <div class="account-name">
+            {{ account.name || account.github_user_login || account.id }}
+          </div>
 
-          <n-thing :title="account.name || account.github_user_login || account.id" />
+          <div class="account-actions">
+            <button
+              v-if="account.id !== activeAccountId"
+              class="account-btn account-btn-switch"
+              :disabled="switchingId === account.id"
+              @click.stop="switchAccount(account.id)"
+            >
+              {{ switchingId === account.id ? '…' : t('accountPanel.switch') }}
+            </button>
+            <button v-else class="account-btn account-btn-current" disabled>
+              {{ t('accountPanel.current') }}
+            </button>
 
-          <template #suffix>
-            <div class="account-actions">
-              <button
-                v-if="account.id !== activeAccountId"
-                class="account-btn account-btn-switch"
-                :disabled="switchingId === account.id"
-                @click.stop="switchAccount(account.id)"
-              >
-                {{ switchingId === account.id ? '…' : t('accountPanel.switch') }}
-              </button>
-              <button class="account-btn account-btn-del" @click.stop="confirmDelete(account)">{{ t('accountPanel.delete') }}</button>
-            </div>
-          </template>
-        </n-list-item>
-      </n-list>
+            <button class="account-btn account-btn-del" @click.stop="confirmDelete(account)">
+              {{ t('accountPanel.delete') }}
+            </button>
+          </div>
+        </article>
+      </div>
 
       <div v-else class="account-empty">
         <p>{{ t('accountPanel.noAccount') }}</p>
@@ -126,51 +121,55 @@ defineExpose({ refresh })
   width: 100%;
   max-height: 360px;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .account-list {
-  border-radius: var(--cp-radius-md);
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--cp-space-3);
 }
 
 .account-item {
-  transition: background var(--cp-transition-fast);
-  padding: var(--cp-space-2) 0;
+  width: 150px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--cp-space-3);
+  padding: var(--cp-space-3);
+  border: 1px solid var(--cp-color-border);
+  border-radius: var(--cp-radius-md);
+  background: var(--cp-color-primary-soft);
 }
 
-.account-item--active {
-  background: var(--cp-color-success-soft);
-  border-radius: var(--cp-radius-sm);
-}
-
-.account-badge {
-  display: inline-flex;
+.account-name {
+  min-height: 38px;
+  display: flex;
   align-items: center;
-  padding: 2px 10px;
-  font-size: var(--cp-font-size-xs);
+  justify-content: center;
+  color: var(--cp-color-text);
+  font-size: var(--cp-font-size-sm);
   font-weight: 600;
-  border-radius: 999px;
-  white-space: nowrap;
-}
-
-.badge-active {
-  background: var(--cp-color-success-soft);
-  color: var(--cp-color-success);
-}
-
-.badge-idle {
-  background: var(--cp-color-border);
-  color: var(--cp-color-text-muted);
+  line-height: 1.35;
+  text-align: center;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .account-actions {
   display: flex;
-  gap: var(--cp-space-2);
-  flex-shrink: 0;
+  justify-content: space-between;
+  gap: 4px;
 }
 
 .account-btn {
-  padding: var(--cp-space-1) var(--cp-space-3);
+  width: 58px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   font-size: var(--cp-font-size-xs);
   border-radius: var(--cp-radius-sm);
   cursor: pointer;
@@ -187,13 +186,23 @@ defineExpose({ refresh })
 }
 
 .account-btn-switch:hover {
-  background: var(--cp-color-primary);
-  color: #fff;
+  box-shadow: 0 0 8px var(--cp-color-primary-soft);
 }
 
 .account-btn-switch:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.account-btn-current {
+  background: var(--cp-color-border);
+  color: var(--cp-color-text-muted);
+  border-color: var(--cp-color-border);
+  cursor: default;
+}
+
+.account-btn-current:disabled {
+  opacity: 1;
 }
 
 .account-btn-del {
@@ -204,6 +213,7 @@ defineExpose({ refresh })
 
 .account-btn-del:hover {
   background: var(--cp-color-error-soft);
+  box-shadow: 0 0 8px var(--cp-color-error-soft);
 }
 
 .account-empty {

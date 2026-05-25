@@ -98,6 +98,7 @@ export interface RequestRecord {
   duration_ms: number
   prompt_tokens: number
   completion_tokens: number
+  reasoning_tokens: number
   total_tokens: number
   error?: string
 }
@@ -108,6 +109,7 @@ export interface ModelUsage {
   failures: number
   prompt_tokens: number
   completion_tokens: number
+  reasoning_tokens: number
   total_tokens: number
 }
 
@@ -117,6 +119,7 @@ export interface StatsResponse {
   failed: number
   prompt_tokens: number
   completion_tokens: number
+  reasoning_tokens: number
   total_tokens: number
   by_model: Record<string, ModelUsage>
   recent: RequestRecord[]

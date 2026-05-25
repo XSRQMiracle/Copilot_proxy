@@ -37,6 +37,7 @@
                   <span><strong>{{ t('requestTable.path') }}:</strong>{{ record.path }}</span>
                   <span><strong>{{ t('requestTable.input') }}:</strong>{{ formatNumber(record.prompt_tokens) }}</span>
                   <span><strong>{{ t('requestTable.output') }}:</strong>{{ formatNumber(record.completion_tokens) }}</span>
+                  <span><strong>{{ t('requestTable.reasoning') }}:</strong>{{ formatNumber(record.reasoning_tokens) }}</span>
                   <span v-if="record.error" class="request-error"><strong>{{ t('requestTable.error') }}:</strong>{{ record.error }}</span>
                 </div>
               </td>

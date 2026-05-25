@@ -252,7 +252,7 @@ func (h *Handler) copyAndRecordResponse(w http.ResponseWriter, resp *http.Respon
 				record.Model = model
 			}
 			if usage, ok := payload["usage"].(map[string]any); ok {
-				record.PromptTokens, record.CompletionTokens, record.TotalTokens = tokensFromUsage(usage)
+				applyUsage(&record, usage)
 			}
 		}
 	}

@@ -152,7 +152,7 @@ func (h *Handler) ServeAnthropicMessages(w http.ResponseWriter, r *http.Request)
 		record.Model = model
 	}
 	if usage, ok := oaiData["usage"].(map[string]any); ok {
-		record.PromptTokens, record.CompletionTokens, record.TotalTokens = tokensFromUsage(usage)
+		applyUsage(&record, usage)
 	}
 	h.record(record)
 	writeJSON(w, http.StatusOK, openAIToAnthropicResponse(oaiData))
@@ -374,7 +374,7 @@ func (h *Handler) serveAnthropicStream(w http.ResponseWriter, r *http.Request, t
 			if streamRecord.PromptTokens == 0 && streamRecord.CompletionTokens == 0 {
 				// 如果流中没有 usage 数据，检查最后一个 chunk 是否有 usage
 				if chunkUsage, ok := chunk["usage"].(map[string]any); ok {
-					if pt, ct, _ := tokensFromUsage(chunkUsage); pt > 0 || ct > 0 {
+					if pt, ct, _, _ := tokensFromUsage(chunkUsage); pt > 0 || ct > 0 {
 						usage = chunkUsage
 					}
 				}

@@ -48,6 +48,7 @@ const cards = computed(() => [
     meta: t('dashboardCards.tokenMeta', {
       prompt: formatNumber(appStore.stats?.prompt_tokens),
       completion: formatNumber(appStore.stats?.completion_tokens),
+      reasoning: formatNumber(appStore.stats?.reasoning_tokens),
     }),
     type: 'info',
   },

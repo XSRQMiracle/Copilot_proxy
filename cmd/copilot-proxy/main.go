@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -124,7 +125,8 @@ func serve(cfg config.Config, configPath string, logger *log.Logger) error {
 
 	authManager.StartRefreshLoop(ctx, 25*time.Minute, logger.Printf)
 
-	stats := proxy.NewStats(500)
+	statsPath := filepath.Join(filepath.Dir(configPath), "stats", "requests.jsonl")
+	stats := proxy.NewPersistentStats(500, statsPath, logger.Printf)
 	proxyHandler := proxy.NewHandler(cfg, authManager, client, logger, stats)
 	restartCh := make(chan struct{}, 1)
 	app := server.NewApp(&cfg, configPath, authManager, proxyHandler, client, logger, restartCh)

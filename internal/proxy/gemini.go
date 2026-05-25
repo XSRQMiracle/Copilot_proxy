@@ -188,7 +188,7 @@ func (h *Handler) serveGeminiGenerate(w http.ResponseWriter, r *http.Request, to
 		record.Model = model
 	}
 	if usage, ok := oaiData["usage"].(map[string]any); ok {
-		record.PromptTokens, record.CompletionTokens, record.TotalTokens = tokensFromUsage(usage)
+		applyUsage(&record, usage)
 	}
 	h.record(record)
 	if hasSafety {

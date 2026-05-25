@@ -27,7 +27,7 @@ vi.mock('../api', () => ({
   statsApi: {
     get: vi.fn().mockResolvedValue({
       total_requests: 0, successful: 0, failed: 0,
-      prompt_tokens: 0, completion_tokens: 0, total_tokens: 0,
+      prompt_tokens: 0, completion_tokens: 0, reasoning_tokens: 0, total_tokens: 0,
       by_model: {}, recent: [],
     }),
   },

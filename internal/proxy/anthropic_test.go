@@ -304,7 +304,14 @@ func TestAnthropicNonStreamHappyPathRecordsDuration(t *testing.T) {
 					"finish_reason": "stop",
 				},
 			},
-			"usage": map[string]any{"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10},
+			"usage": map[string]any{
+				"prompt_tokens":     7,
+				"completion_tokens": 3,
+				"total_tokens":      10,
+				"completion_tokens_details": map[string]any{
+					"reasoning_tokens": 2,
+				},
+			},
 		})
 	})
 
@@ -347,6 +354,9 @@ func TestAnthropicNonStreamHappyPathRecordsDuration(t *testing.T) {
 	}
 	if record.PromptTokens != 7 || record.CompletionTokens != 3 || record.TotalTokens != 10 {
 		t.Fatalf("record tokens = (%d, %d, %d), want (7, 3, 10)", record.PromptTokens, record.CompletionTokens, record.TotalTokens)
+	}
+	if record.ReasoningTokens != 2 {
+		t.Fatalf("record reasoning tokens = %d, want 2", record.ReasoningTokens)
 	}
 }
 

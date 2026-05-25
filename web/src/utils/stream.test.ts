@@ -119,4 +119,51 @@ describe('readStream', () => {
     await readStream(reader, { onDelta: vi.fn(), onDone })
     expect(onDone).toHaveBeenCalledWith({ total_tokens: 10 })
   })
+
+  it('does not call onDone twice when usage + DONE both present', async () => {
+    const onDone = vi.fn()
+    const reader = mockReader([
+      encode('data: {"usage":{"total_tokens":10}}\n'),
+      encode('data: [DONE]\n'),
+    ])
+
+    await readStream(reader, { onDelta: vi.fn(), onDone })
+    expect(onDone).toHaveBeenCalledTimes(1)
+    expect(onDone).toHaveBeenCalledWith({ total_tokens: 10 })
+  })
+
+  it('does not call onDone twice when DONE + reader both fire', async () => {
+    const onDone = vi.fn()
+    const reader = mockReader([
+      encode('data: [DONE]\n'),
+    ])
+
+    await readStream(reader, { onDelta: vi.fn(), onDone })
+    expect(onDone).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not call onDone twice when multiple DONE signals are present', async () => {
+    const onDone = vi.fn()
+    const reader = mockReader([
+      encode('data: [DONE]\n'),
+      encode('data: [DONE]\n'),
+    ])
+
+    await readStream(reader, { onDelta: vi.fn(), onDone })
+    expect(onDone).toHaveBeenCalledTimes(1)
+  })
+
+  it('usage-only chunk does not cause duplicate onDone', async () => {
+    const onDelta = vi.fn()
+    const onDone = vi.fn()
+    const reader = mockReader([
+      encode('data: {"choices":[{"delta":{"content":"hi"}}]}\n'),
+      encode('data: {"usage":{"total_tokens":10}}\n'),
+    ])
+
+    await readStream(reader, { onDelta, onDone })
+    expect(onDelta).toHaveBeenCalledWith('hi')
+    expect(onDone).toHaveBeenCalledTimes(1)
+    expect(onDone).toHaveBeenCalledWith({ total_tokens: 10 })
+  })
 })

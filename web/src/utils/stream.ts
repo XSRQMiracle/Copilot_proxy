@@ -14,6 +14,7 @@ export async function readStream(
   const decoder = new TextDecoder()
   const { onDelta, onDone, onError, signal } = options
   let buffer = ''
+  let finalized = false
 
   try {
     while (true) {
@@ -24,7 +25,10 @@ export async function readStream(
 
       const { done, value } = await reader.read()
       if (done) {
-        onDone?.()
+        if (!finalized) {
+          finalized = true
+          onDone?.()
+        }
         return
       }
 
@@ -38,7 +42,10 @@ export async function readStream(
 
         const data = trimmed.slice(6).trim()
         if (data === '[DONE]') {
-          onDone?.()
+          if (!finalized) {
+            finalized = true
+            onDone?.()
+          }
           return
         }
 
@@ -48,7 +55,8 @@ export async function readStream(
           if (choice?.delta?.content) {
             onDelta(choice.delta.content)
           }
-          if (parsed.usage) {
+          if (parsed.usage && !finalized) {
+            finalized = true
             onDone?.(parsed.usage)
           }
         } catch {

@@ -6,7 +6,7 @@ GO_BUILD=CGO_ENABLED=0 go build -ldflags="-s -w"
 all: build
 
 frontend:
-	cd web && npm ci && npm run build
+	cd web && npm i && npm run build
 
 internal/web/dist: frontend
 	rm -rf internal/web/dist

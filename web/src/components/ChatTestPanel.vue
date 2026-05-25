@@ -35,6 +35,7 @@
       <div class="ctp-main">
         <div class="ctp-chat-header">
           <h2>{{ t('chatTest.chatTitle') }}</h2>
+          <span v-if="currentModelInfo" class="ctp-current-model">{{ displayModelName(currentModelInfo) }}</span>
         </div>
         <div class="ctp-chat-body" ref="chatBodyRef">
           <div class="ctp-messages">
@@ -112,6 +113,8 @@ const filteredModels = computed(() => {
     return id.includes(q) || name.includes(q) || vendor.includes(q)
   })
 })
+
+const currentModelInfo = computed(() => models.value.find(m => m.id === selectedModel.value) ?? null)
 
 const messages = ref<ChatMessage[]>([])
 const inputText = ref('')
@@ -215,8 +218,10 @@ onMounted(async () => {
   try {
     const resp = await chatApi.models()
     const raw = resp.data ?? []
-    // 归一化：确保每个模型都有非空 id
-    models.value = raw.map(m => ({ ...m, id: m.id ?? m.name ?? `model-${Math.random().toString(36).slice(2, 8)}` }))
+    // 归一化：确保每个模型都有非空 id，并过滤不可用模型
+    models.value = raw
+      .map(m => ({ ...m, id: m.id || m.name || `model-${Math.random().toString(36).slice(2, 8)}` }))
+      .filter(m => m.policy?.state !== 'disabled' && m.model_picker_enabled !== false)
     if (models.value.length > 0) {
       selectedModel.value = models.value[0].id
     }
@@ -307,6 +312,9 @@ onMounted(async () => {
 }
 
 .ctp-chat-header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
   padding: var(--cp-space-4) var(--cp-space-5) 0;
   flex-shrink: 0;
 }
@@ -318,6 +326,21 @@ onMounted(async () => {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--cp-color-text-muted);
+}
+
+.ctp-current-model {
+  justify-self: center;
+  font-size: var(--cp-font-size-xs);
+  color: var(--cp-color-primary);
+  background: var(--cp-color-primary-soft);
+  padding: 1px 8px;
+  border-radius: var(--cp-radius-sm);
+  font-weight: 500;
+  line-height: 1.6;
+  max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ── 公共 ── */

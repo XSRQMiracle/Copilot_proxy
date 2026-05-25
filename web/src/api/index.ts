@@ -22,6 +22,8 @@ export interface ModelInfo {
   object?: string
   created?: number
   owned_by?: string
+  model_picker_enabled?: boolean
+  policy?: { state?: string; terms?: string }
 }
 
 export interface ModelsResponse {

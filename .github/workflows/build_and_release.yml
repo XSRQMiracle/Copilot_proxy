@@ -34,7 +34,7 @@ jobs:
       - name: Build frontend
         run: |
           cd web
-          npm ci
+          npm install
           npm run build
 
       - name: Copy frontend for Go embed

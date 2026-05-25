@@ -2,7 +2,7 @@
   <div class="account-panel">
     <n-spin :show="loading">
       <div v-if="accounts.length" class="account-list">
-        <article v-for="account in accounts" :key="account.id" class="account-item">
+        <div v-for="account in accounts" :key="account.id" class="account-row">
           <div class="account-name">
             {{ account.name || account.github_user_login || account.id }}
           </div>
@@ -24,7 +24,7 @@
               {{ t('accountPanel.delete') }}
             </button>
           </div>
-        </article>
+        </div>
       </div>
 
       <div v-else class="account-empty">
@@ -127,40 +127,43 @@ defineExpose({ refresh })
 .account-list {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: var(--cp-space-3);
 }
 
-.account-item {
-  width: 150px;
-  box-sizing: border-box;
+.account-row {
   display: flex;
-  flex-direction: column;
-  gap: var(--cp-space-3);
-  padding: var(--cp-space-3);
-  border: 1px solid var(--cp-color-border);
-  border-radius: var(--cp-radius-md);
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--cp-space-2) var(--cp-space-1);
+  border-bottom: 1px solid var(--cp-color-border);
+}
+
+.account-row:last-child {
+  border-bottom: none;
+}
+
+.account-row:hover {
   background: var(--cp-color-primary-soft);
+  border-radius: var(--cp-radius-sm);
 }
 
 .account-name {
-  min-height: 38px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  flex: 1;
+  min-width: 0;
   color: var(--cp-color-text);
   font-size: var(--cp-font-size-sm);
   font-weight: 600;
   line-height: 1.35;
-  text-align: center;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: var(--cp-space-3);
 }
 
 .account-actions {
   display: flex;
-  justify-content: space-between;
-  gap: 4px;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .account-btn {

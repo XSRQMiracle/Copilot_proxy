@@ -61,6 +61,58 @@ describe('readStream', () => {
     expect(onDone).toHaveBeenCalledTimes(1)
   })
 
+  it('calls onDone on finish_reason signal', async () => {
+    const onDone = vi.fn()
+    const reader = mockReader([
+      encode('data: {"choices":[{"delta":{"content":"ok"}}]}\n'),
+      encode('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n'),
+    ])
+
+    await readStream(reader, { onDelta: vi.fn(), onDone })
+    expect(onDone).toHaveBeenCalledTimes(1)
+  })
+
+  it('emits same-chunk delta before completing on finish_reason', async () => {
+    const events: string[] = []
+    const reader = mockReader([
+      encode('data: {"choices":[{"delta":{"content":"done"},"finish_reason":"stop"}]}\n'),
+    ])
+
+    await readStream(reader, {
+      onDelta: (text) => events.push(`delta:${text}`),
+      onDone: () => events.push('done'),
+    })
+
+    expect(events).toEqual(['delta:done', 'done'])
+  })
+
+  it('does not complete on non-terminal choice chunks that include usage', async () => {
+    const events: string[] = []
+    const reader = mockReader([
+      encode('data: {"choices":[{"delta":{"content":null,"role":"assistant","reasoning_text":"thinking"}}],"usage":{"total_tokens":0}}\n'),
+      encode('data: {"choices":[{"delta":{"content":"你好！"},"finish_reason":"stop"}],"usage":{"total_tokens":42}}\n'),
+      encode('data: [DONE]\n'),
+    ])
+
+    await readStream(reader, {
+      onDelta: (text) => events.push(`delta:${text}`),
+      onDone: (usage) => events.push(`done:${usage?.total_tokens}`),
+    })
+
+    expect(events).toEqual(['delta:你好！', 'done:42'])
+  })
+
+  it('does not call onDone twice when finish_reason + DONE both present', async () => {
+    const onDone = vi.fn()
+    const reader = mockReader([
+      encode('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n'),
+      encode('data: [DONE]\n'),
+    ])
+
+    await readStream(reader, { onDelta: vi.fn(), onDone })
+    expect(onDone).toHaveBeenCalledTimes(1)
+  })
+
   it('calls onDone when reader is exhausted', async () => {
     const onDone = vi.fn()
     const reader = mockReader([

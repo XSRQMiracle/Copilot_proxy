@@ -15,6 +15,12 @@ export async function readStream(
   const { onDelta, onDone, onError, signal } = options
   let buffer = ''
   let finalized = false
+  let latestUsage: Record<string, number> | undefined
+  const complete = (usage?: Record<string, number>) => {
+    if (finalized) return
+    finalized = true
+    onDone?.(usage ?? latestUsage)
+  }
 
   try {
     while (true) {
@@ -25,10 +31,7 @@ export async function readStream(
 
       const { done, value } = await reader.read()
       if (done) {
-        if (!finalized) {
-          finalized = true
-          onDone?.()
-        }
+        complete()
         return
       }
 
@@ -42,22 +45,27 @@ export async function readStream(
 
         const data = trimmed.slice(6).trim()
         if (data === '[DONE]') {
-          if (!finalized) {
-            finalized = true
-            onDone?.()
-          }
+          complete()
           return
         }
 
         try {
           const parsed = JSON.parse(data)
-          const choice = parsed.choices?.[0]
+          const choices = Array.isArray(parsed.choices) ? parsed.choices : []
+          const choice = choices[0]
+          if (parsed.usage) {
+            latestUsage = parsed.usage
+          }
           if (choice?.delta?.content) {
             onDelta(choice.delta.content)
           }
-          if (parsed.usage && !finalized) {
-            finalized = true
-            onDone?.(parsed.usage)
+          if (parsed.usage && choices.length === 0) {
+            complete(parsed.usage)
+            return
+          }
+          if (choice?.finish_reason) {
+            complete()
+            return
           }
         } catch {
           onError?.(new Error(`SSE parse error: ${data}`))

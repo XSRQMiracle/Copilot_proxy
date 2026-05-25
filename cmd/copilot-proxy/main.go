@@ -32,9 +32,9 @@ func main() {
 func run(args []string) error {
 	opts, cmds := parseGlobalOptions(args)
 
-	cfg, resolvedPath, err := config.LoadWithDecryptedTokens(opts.configPath)
+	cfg, resolvedPath, err := config.LoadWithResolvedTokens(opts.configPath)
 	if err != nil {
-		// 解密警告是非致命的：WebUI 仍可启动，用户可重刷 token 或重新授权
+		// Token storage warnings are non-fatal: WebUI can still start and re-authorize.
 		fmt.Fprintln(os.Stderr, "[!]", err)
 	}
 	logger := log.New(os.Stdout, "", 0)

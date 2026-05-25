@@ -3,7 +3,7 @@
 # Copilot Proxy
 
 将 GitHub Copilot 转为 OpenAI、Anthropic 和 Gemini 兼容 API
-Go + Vue 3 实现，单二进制嵌入 WebUI，零外部运行时依赖
+Go + Vue 3 实现，单二进制嵌入 WebUI，并使用系统原生凭据存储
 
 ## 特性
 
@@ -11,7 +11,7 @@ Go + Vue 3 实现，单二进制嵌入 WebUI，零外部运行时依赖
 - Anthropic Messages API 兼容：`http://localhost:15432/v1/messages`
 - Gemini API 兼容：`http://localhost:15432/v1beta/models/{model}:generateContent`
 - 单文件二进制 —— Go 后端通过 `go:embed` 嵌入 Vue 3 + Naive UI 前端
-- Token 使用 AES-256-GCM 加密存储，密钥从机器硬件指纹派生，无需系统 keyring
+- 桌面平台使用系统 keyring 存储 Token，Linux headless 回退到 `0600` 配置文件
 - 多账号支持：WebUI 内添加和切换多个 GitHub 账号
 - 请求统计和实时额度展示
 - 完善的 SSE 流式响应支持
@@ -222,15 +222,14 @@ curl "http://localhost:15432/v1beta/models/gemini-pro:generateContent?key=dummy"
 
 ## Token 安全
 
-GitHub Token 在写入 `config.json` 前会使用 **AES-256-GCM** 加密
-加密密钥从机器硬件指纹派生：
+GitHub Token 默认存入系统凭据库，`config.json` 只保存 `github_token_ref` 引用：
 
-- **Windows**：注册表中的 `MachineGuid`
-- **Linux**：`/etc/machine-id`
-- **macOS**：I/O Kit 的 `IOPlatformUUID`
+- **Windows**：Credential Manager
+- **macOS**：Keychain
+- **Linux 桌面环境**：Secret Service / libsecret
+- **Linux headless**：回退到 `config.json` 中的 `github_token`，配置文件权限为 `0600`
 
-这意味着配置文件与特定机器绑定，无法在其他设备上解密
-无需系统 keyring、无需第三方凭据管理器、无明文 Token 文件
+本版本已移除旧的机器指纹 AES 加密格式。升级旧版本时，请先删除旧 `config.json`，启动后重新授权生成新配置。
 
 ## 项目结构
 
@@ -239,8 +238,8 @@ cmd/copilot-proxy/          # 入口（CLI 子命令、信号处理、服务器�
 internal/
 ├── config/
 │   ├── config.go            # 配置加载/保存/验证（默认值、热重载）
+│   ├── token_store.go       # 系统 keyring / headless 文件 token 存储
 │   ├── config_test.go       # 配置测试
-│   └── crypto.go            # AES-GCM 加密/解密（机器指纹派生密钥）
 ├── auth/
 │   ├── auth.go              # 账号管理器（多账号增删改查 + Token 生命周期）
 │   └── oauth.go             # GitHub Device Code Flow 客户端

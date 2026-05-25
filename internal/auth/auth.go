@@ -190,6 +190,7 @@ func (m *Manager) RemoveAccount(ctx context.Context, id string) error {
 		return fmt.Errorf("account %q not found", id)
 	}
 
+	removedAccount := m.cfg.Auth.Accounts[idx]
 	m.cfg.Auth.Accounts = append(m.cfg.Auth.Accounts[:idx], m.cfg.Auth.Accounts[idx+1:]...)
 
 	if m.activeID == id {
@@ -207,6 +208,9 @@ func (m *Manager) RemoveAccount(ctx context.Context, id string) error {
 
 	if err := config.Save(m.configPath, *m.cfg); err != nil {
 		return err
+	}
+	if err := config.DeleteStoredGitHubToken(removedAccount); err != nil {
+		return fmt.Errorf("delete stored github token: %w", err)
 	}
 
 	if m.HasGitHubToken() && m.activeID != "" {

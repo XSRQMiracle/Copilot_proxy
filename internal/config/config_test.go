@@ -1,9 +1,13 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/zalando/go-keyring"
 )
 
 func TestLoadCreatesDefaultConfig(t *testing.T) {
@@ -85,5 +89,87 @@ func TestIsVendorDeniedCustom(t *testing.T) {
 		if got := cfg.IsVendorDenied(tt.vendor); got != tt.want {
 			t.Errorf("IsVendorDenied(%q) = %v, want %v", tt.vendor, got, tt.want)
 		}
+	}
+}
+
+func TestSaveUsesPlainFileStorageWhenForced(t *testing.T) {
+	t.Setenv(tokenStorageEnv, TokenStorageFile)
+	path := filepath.Join(t.TempDir(), "config.json")
+	cfg := Default()
+	cfg.Auth.ActiveAccountID = "alice"
+	cfg.Auth.Accounts = []AccountConfig{{
+		ID:              "alice",
+		Name:            "alice",
+		GitHubUserLogin: "alice",
+		GitHubToken:     "gho_plain",
+	}}
+
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var persisted Config
+	if err := json.Unmarshal(raw, &persisted); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if got := persisted.Auth.Accounts[0].GitHubToken; got != "gho_plain" {
+		t.Fatalf("persisted token = %q, want plaintext fallback token", got)
+	}
+	if got := persisted.Auth.Accounts[0].GitHubTokenRef; got != "" {
+		t.Fatalf("token ref = %q, want empty for file storage", got)
+	}
+
+	loaded, _, err := LoadWithResolvedTokens(path)
+	if err != nil {
+		t.Fatalf("LoadWithResolvedTokens() error = %v", err)
+	}
+	if got := loaded.Auth.Accounts[0].GitHubToken; got != "gho_plain" {
+		t.Fatalf("loaded token = %q, want plaintext token", got)
+	}
+}
+
+func TestSaveUsesKeyringStorageWhenForced(t *testing.T) {
+	t.Setenv(tokenStorageEnv, TokenStorageKeyring)
+	keyring.MockInit()
+	path := filepath.Join(t.TempDir(), "config.json")
+	cfg := Default()
+	cfg.Auth.ActiveAccountID = "alice"
+	cfg.Auth.Accounts = []AccountConfig{{
+		ID:              "alice",
+		Name:            "alice",
+		GitHubUserLogin: "alice",
+		GitHubToken:     "gho_secret",
+	}}
+
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if string(raw) == "" || strings.Contains(string(raw), "gho_secret") {
+		t.Fatalf("persisted config leaked token: %s", raw)
+	}
+	var persisted Config
+	if err := json.Unmarshal(raw, &persisted); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if got := persisted.Auth.Accounts[0].GitHubToken; got != "" {
+		t.Fatalf("persisted token = %q, want empty for keyring storage", got)
+	}
+	if got := persisted.Auth.Accounts[0].GitHubTokenRef; got != "keyring:github:alice" {
+		t.Fatalf("token ref = %q, want keyring ref", got)
+	}
+
+	loaded, _, err := LoadWithResolvedTokens(path)
+	if err != nil {
+		t.Fatalf("LoadWithResolvedTokens() error = %v", err)
+	}
+	if got := loaded.Auth.Accounts[0].GitHubToken; got != "gho_secret" {
+		t.Fatalf("loaded token = %q, want keyring token", got)
 	}
 }

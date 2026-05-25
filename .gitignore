@@ -14,7 +14,7 @@ vendor/
 # build
 *.exe
 internal/web/dist/
-copilot-proxy
+/copilot-proxy
 *.exe
 *.exe~
 
@@ -25,7 +25,7 @@ package-lock.json
 yarn.lock
 
 # config
-config/
+/config/
 
 # tmp
 test/

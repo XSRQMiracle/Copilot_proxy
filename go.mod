@@ -2,4 +2,10 @@ module github.com/Open-Copilot-Proxy/Copilot_Proxy
 
 go 1.23
 
-// 零外部依赖 — 全部使用 Go 标准库 (crypto, net/http, encoding/json 等)
+require github.com/zalando/go-keyring v0.2.8
+
+require (
+	github.com/danieljoos/wincred v1.2.3 // indirect
+	github.com/godbus/dbus/v5 v5.2.2 // indirect
+	golang.org/x/sys v0.27.0 // indirect
+)

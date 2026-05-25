@@ -3,7 +3,7 @@
 # Copilot Proxy
 
 Expose GitHub Copilot as an OpenAI, Anthropic, and Gemini compatible API
-Built with Go + Vue 3, single binary with embedded WebUI, zero external runtime dependencies
+Built with Go + Vue 3, single binary with embedded WebUI and native OS credential storage
 
 ## Features
 
@@ -11,7 +11,7 @@ Built with Go + Vue 3, single binary with embedded WebUI, zero external runtime 
 - Anthropic Messages API compatibility at `http://localhost:15432/v1/messages`
 - Gemini API compatibility at `http://localhost:15432/v1beta/models/{model}:generateContent`
 - Single binary — Go backend with embedded Vue 3 + Naive UI frontend via `go:embed`
-- AES-GCM encrypted token storage using machine-specific key derivation, no system keyring required
+- System keyring token storage on desktop platforms, with `0600` file fallback for headless Linux
 - Multi-account support — add and switch between multiple GitHub accounts via WebUI
 - Request statistics and real-time quota display
 - Streaming support with proper SSE handling
@@ -228,15 +228,14 @@ curl "http://localhost:15432/v1beta/models/gemini-pro:generateContent?key=dummy"
 
 ## Token Security
 
-GitHub tokens are encrypted at rest using **AES-256-GCM** before being written to `config.json`
-The encryption key is derived from the machine's hardware fingerprint:
+GitHub tokens are stored in the system credential store by default, and `config.json` only keeps a `github_token_ref` reference:
 
-- **Windows**: `MachineGuid` from registry
-- **Linux**: `/etc/machine-id`
-- **macOS**: `IOPlatformUUID` from I/O Kit
+- **Windows**: Credential Manager
+- **macOS**: Keychain
+- **Linux desktop sessions**: Secret Service / libsecret
+- **Linux headless**: falls back to `github_token` in `config.json`, protected by `0600` file permissions
 
-This means the config file is tied to a specific machine and cannot be decrypted on another device
-No system keyring, no third-party credential managers, no plaintext token files
+The old machine-fingerprint AES token format has been removed. When upgrading from an older version, delete the old `config.json` and re-authorize to generate the new format.
 
 ## Architecture
 
@@ -245,8 +244,8 @@ cmd/copilot-proxy/          # Entry point (CLI subcommands, signal handling, ser
 internal/
 ├── config/
 │   ├── config.go            # Config load/save/validation (defaults, hot-reload)
+│   ├── token_store.go       # System keyring / headless file token storage
 │   ├── config_test.go       # Config tests
-│   └── crypto.go            # AES-GCM encrypt/decrypt (machine-fingerprint key)
 ├── auth/
 │   ├── auth.go              # Account manager (multi-account CRUD + token lifecycle)
 │   └── oauth.go             # GitHub Device Code Flow client

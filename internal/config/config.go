@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -67,6 +66,7 @@ type AccountConfig struct {
 	Name            string `json:"name"`
 	GitHubUserLogin string `json:"github_user_login,omitempty"`
 	GitHubToken     string `json:"github_token,omitempty"`
+	GitHubTokenRef  string `json:"github_token_ref,omitempty"`
 }
 
 type AuthConfig struct {
@@ -104,8 +104,8 @@ func Default() Config {
 			UserAgent:           "GithubCopilot/1.246.0",
 		},
 		Security: SecurityConfig{
-			APIKey:          "dummy",
-			AdminPassword:   "admin",
+			APIKey:        "dummy",
+			AdminPassword: "admin",
 		},
 		Runtime: RuntimeConfig{ProxyDisabled: false, DeniedVendors: []string{"github-copilot"}},
 		Auth: AuthConfig{
@@ -171,76 +171,75 @@ func Save(path string, cfg Config) error {
 		return err
 	}
 
-	// 加密所有账号的 github_token
-	encrypted := cfg
-	// 深拷贝 Accounts 切片，避免加密 ciphertext 回写时修改调用者 cfg 的共享底层数组
-	encrypted.Auth.Accounts = append([]AccountConfig{}, encrypted.Auth.Accounts...)
-	for i := range encrypted.Auth.Accounts {
-		token := encrypted.Auth.Accounts[i].GitHubToken
-		if token != "" && !IsProbablyEncrypted(token) {
-			ciphertext, err := EncryptToken(token)
+	persisted := cfg
+	// 深拷贝 Accounts 切片，避免持久化时修改调用者 cfg 的共享底层数组。
+	persisted.Auth.Accounts = append([]AccountConfig{}, persisted.Auth.Accounts...)
+	storage := EffectiveTokenStorage()
+	for i := range persisted.Auth.Accounts {
+		account := &persisted.Auth.Accounts[i]
+		token := account.GitHubToken
+		if token == "" {
+			continue
+		}
+		switch storage {
+		case TokenStorageKeyring:
+			ref, err := StoreGitHubToken(account.ID, token)
 			if err != nil {
-				return fmt.Errorf("encrypt token for account %s: %w", encrypted.Auth.Accounts[i].ID, err)
+				return fmt.Errorf("store token in keyring for account %s: %w", account.ID, err)
 			}
-			encrypted.Auth.Accounts[i].GitHubToken = ciphertext
+			account.GitHubToken = ""
+			account.GitHubTokenRef = ref
+		case TokenStorageFile:
+			account.GitHubToken = token
+			account.GitHubTokenRef = ""
 		}
 	}
 
-	raw, err := json.MarshalIndent(encrypted, "", "  ")
+	raw, err := json.MarshalIndent(persisted, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, append(raw, '\n'), 0o600)
 }
 
-// LoadWithDecryptedTokens 加载配置并解密所有 github_token。
-// 解密失败的 token 会被清空（而非继续以密文体作为凭据使用），并通过错误返回汇总警告。
-func LoadWithDecryptedTokens(path string) (Config, string, error) {
+// LoadWithResolvedTokens 加载配置并解析 GitHub token。
+// 桌面平台从系统 keyring 读取 github_token_ref；headless Linux 使用 0600 配置文件中的明文 token。
+func LoadWithResolvedTokens(path string) (Config, string, error) {
 	cfg, resolved, err := Load(path)
 	if err != nil {
 		return cfg, resolved, err
 	}
 
-	// Reload raw to decrypt tokens
-	raw, err := os.ReadFile(resolved)
-	if err != nil {
-		return cfg, resolved, err
-	}
-	// 从原始 JSON 解密 token
-	var rawCfg Config
-	if err := json.Unmarshal(raw, &rawCfg); err != nil {
-		return cfg, resolved, err
-	}
-
-	var decryptErrs []error
-	for i := range rawCfg.Auth.Accounts {
-		token := rawCfg.Auth.Accounts[i].GitHubToken
-		if token != "" && IsProbablyEncrypted(token) {
-			log.Printf("[DEBUG] LoadWithDecryptedTokens: attempting decrypt for account %q (token prefix: %s len=%d)",
-				rawCfg.Auth.Accounts[i].ID, token[:min(len(token), 20)], len(token))
-			plaintext, err := DecryptToken(token)
-			if err != nil {
-				// 解密失败：不清除现有配置，仅把内存中的 token 置空；
-				// 绝不保留密文字符串作为后续鉴权的凭据。
-				cfg.Auth.Accounts[i].GitHubToken = ""
-				log.Printf("[DEBUG] LoadWithDecryptedTokens: decrypt FAILED for account %q: %v",
-					rawCfg.Auth.Accounts[i].ID, err)
-				decryptErrs = append(decryptErrs, fmt.Errorf("account %q: %w", rawCfg.Auth.Accounts[i].ID, err))
+	storage := EffectiveTokenStorage()
+	var resolveErrs []error
+	for i := range cfg.Auth.Accounts {
+		account := &cfg.Auth.Accounts[i]
+		switch storage {
+		case TokenStorageKeyring:
+			if account.GitHubTokenRef == "" {
+				if account.GitHubToken != "" {
+					account.GitHubToken = ""
+					resolveErrs = append(resolveErrs, fmt.Errorf("account %q: legacy github_token is no longer supported with keyring storage; delete config.json and re-authorize", account.ID))
+				}
 				continue
 			}
-			log.Printf("[DEBUG] LoadWithDecryptedTokens: decrypt OK for account %q (plaintext len=%d)",
-				rawCfg.Auth.Accounts[i].ID, len(plaintext))
-			cfg.Auth.Accounts[i].GitHubToken = plaintext
-		} else if token != "" && !IsProbablyEncrypted(token) {
-			log.Printf("[DEBUG] LoadWithDecryptedTokens: token for account %q is not encrypted, using as-is (prefix=%s len=%d)",
-				rawCfg.Auth.Accounts[i].ID, token[:min(len(token), 20)], len(token))
-			cfg.Auth.Accounts[i].GitHubToken = token
+			plaintext, err := LoadGitHubToken(account.GitHubTokenRef)
+			if err != nil {
+				account.GitHubToken = ""
+				resolveErrs = append(resolveErrs, fmt.Errorf("account %q: load keyring token: %w", account.ID, err))
+				continue
+			}
+			account.GitHubToken = plaintext
+		case TokenStorageFile:
+			if account.GitHubTokenRef != "" && account.GitHubToken == "" {
+				resolveErrs = append(resolveErrs, fmt.Errorf("account %q: keyring token reference is unavailable in file token storage; delete config.json and re-authorize", account.ID))
+			}
 		}
 	}
 
-	if len(decryptErrs) > 0 {
-		return cfg, resolved, fmt.Errorf("the following accounts had token decryption failures and were cleared: %s",
-			errors.Join(decryptErrs...))
+	if len(resolveErrs) > 0 {
+		return cfg, resolved, fmt.Errorf("the following accounts had token load failures and were cleared: %s",
+			errors.Join(resolveErrs...))
 	}
 	return cfg, resolved, nil
 }

@@ -271,7 +271,7 @@ func (a *App) updateConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	reloaded, _, err := config.LoadWithDecryptedTokens(a.configPath)
+	reloaded, _, err := config.LoadWithResolvedTokens(a.configPath)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

@@ -36,7 +36,7 @@
         <div class="ctp-chat-header">
           <h2>{{ t('chatTest.chatTitle') }}</h2>
         </div>
-        <div class="ctp-chat-body">
+        <div class="ctp-chat-body" ref="chatBodyRef">
           <div class="ctp-messages">
             <div v-for="(msg, i) in messages" :key="i" class="ctp-msg-row" :class="msg.role">
               <div class="ctp-msg-avatar">{{ msg.role === 'user' ? 'U' : 'A' }}</div>
@@ -89,7 +89,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { chatApi, type ChatMessage, type ModelInfo } from '../api'
 import { createChatStream, readStream } from '../utils/stream'
 import { useI18n } from '../i18n'
@@ -118,6 +118,15 @@ const inputText = ref('')
 const sending = ref(false)
 const streamingText = ref('')
 const attachPreview = ref<{ name: string; data: string; type: string } | null>(null)
+const chatBodyRef = ref<HTMLElement | null>(null)
+
+function scrollToBottom() {
+  nextTick(() => {
+    if (chatBodyRef.value) {
+      chatBodyRef.value.scrollTop = chatBodyRef.value.scrollHeight
+    }
+  })
+}
 
 const canSend = computed(() => selectedModel.value && inputText.value.trim() && !sending.value)
 
@@ -167,26 +176,35 @@ async function sendMessage() {
     userMsg.attachments = [{ type: attachPreview.value.type, data: attachPreview.value.data, name: attachPreview.value.name }]
     attachPreview.value = null
   }
-  messages.value.push(userMsg)
+  messages.value = [userMsg]
+  scrollToBottom()
 
   sending.value = true
   streamingText.value = ''
 
   try {
-    const reader = await createChatStream(selectedModel.value, messages.value.map(m => ({ role: m.role, content: m.content })))
+    const reader = await createChatStream(selectedModel.value, [{ role: 'user', content: text }])
     await readStream(reader, {
-      onDelta: (text) => { streamingText.value += text },
+      onDelta: (text) => { 
+        streamingText.value += text
+        scrollToBottom()
+      },
       onDone: () => {
-        messages.value.push({ role: 'assistant', content: streamingText.value })
+        if (streamingText.value.trim().length > 0) {
+          messages.value.push({ role: 'assistant', content: streamingText.value })
+        }
         streamingText.value = ''
+        scrollToBottom()
       },
       onError: (err) => {
         messages.value.push({ role: 'assistant', content: `Error: ${err.message}` })
         streamingText.value = ''
+        scrollToBottom()
       },
     })
   } catch (err) {
     messages.value.push({ role: 'assistant', content: `Error: ${err instanceof Error ? err.message : String(err)}` })
+    scrollToBottom()
   } finally {
     sending.value = false
   }

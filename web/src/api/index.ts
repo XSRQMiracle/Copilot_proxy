@@ -34,7 +34,6 @@ export interface ModelsResponse {
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
-  attachments?: { type: string; data: string; name: string }[]
 }
 
 export interface ChatTestRequest {

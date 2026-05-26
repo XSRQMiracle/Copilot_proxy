@@ -43,11 +43,6 @@
               <div class="ctp-msg-avatar">{{ msg.role === 'user' ? 'U' : 'A' }}</div>
               <div class="ctp-msg-content">
                 <div class="ctp-msg-text">{{ msg.content }}</div>
-                <div v-if="msg.attachments?.length" class="ctp-attachments">
-                  <div v-for="(att, j) in msg.attachments" :key="j" class="ctp-attach-item">
-                    <span>{{ att.name }}</span>
-                  </div>
-                </div>
               </div>
             </div>
             <div v-if="streamingText" class="ctp-msg-row assistant">
@@ -67,21 +62,10 @@
               :placeholder="t('chatTest.inputPlaceholder')"
               :disabled="!selectedModel || sending"
               @keydown.enter.exact.prevent="sendMessage"
-              @paste="handlePaste"
             />
             <button class="ctp-send-btn" :disabled="!canSend" @click="sendMessage">
               {{ sending ? '...' : t('chatTest.send') }}
             </button>
-          </div>
-          <div v-if="attachPreview" class="ctp-attach-preview">
-            <span>{{ attachPreview.name }}</span>
-            <button class="ctp-attach-remove" @click="attachPreview = null">&times;</button>
-          </div>
-          <div class="ctp-actions">
-            <label class="ctp-file-btn">
-              📎 {{ t('chatTest.attachFile') }}
-              <input type="file" multiple accept="image/*,.pdf,.txt,.json,.js,.ts,.py,.go,.md,.yaml,.yml" hidden @change="handleFiles" />
-            </label>
           </div>
         </div>
       </div>
@@ -120,7 +104,6 @@ const messages = ref<ChatMessage[]>([])
 const inputText = ref('')
 const sending = ref(false)
 const streamingText = ref('')
-const attachPreview = ref<{ name: string; data: string; type: string } | null>(null)
 const chatBodyRef = ref<HTMLElement | null>(null)
 
 function scrollToBottom() {
@@ -141,45 +124,12 @@ function selectModel(id: string) {
   selectedModel.value = id
 }
 
-function handlePaste(e: ClipboardEvent) {
-  const items = e.clipboardData?.items
-  if (!items) return
-  for (const item of items) {
-    if (item.type.startsWith('image/')) {
-      const file = item.getAsFile()
-      if (!file) continue
-      const reader = new FileReader()
-      reader.onload = () => {
-        attachPreview.value = { name: file.name, data: reader.result as string, type: file.type }
-      }
-      reader.readAsDataURL(file)
-      break
-    }
-  }
-}
-
-function handleFiles(e: Event) {
-  const files = (e.target as HTMLInputElement).files
-  if (!files || !files.length) return
-  const file = files[0]
-  const reader = new FileReader()
-  reader.onload = () => {
-    attachPreview.value = { name: file.name, data: reader.result as string, type: file.type }
-  }
-  reader.readAsDataURL(file)
-}
-
 async function sendMessage() {
   if (!canSend.value) return
   const text = inputText.value.trim()
   inputText.value = ''
 
-  const userMsg: ChatMessage = { role: 'user', content: text }
-  if (attachPreview.value) {
-    userMsg.attachments = [{ type: attachPreview.value.type, data: attachPreview.value.data, name: attachPreview.value.name }]
-    attachPreview.value = null
-  }
-  messages.value = [userMsg]
+  messages.value = [{ role: 'user', content: text }]
   scrollToBottom()
 
   sending.value = true
@@ -469,19 +419,6 @@ onMounted(async () => {
   background: var(--cp-color-primary-soft);
 }
 
-.ctp-attachments {
-  margin-top: var(--cp-space-2);
-}
-
-.ctp-attach-item {
-  padding: var(--cp-space-1) var(--cp-space-2);
-  background: var(--cp-color-card);
-  border: 1px solid var(--cp-color-border);
-  border-radius: var(--cp-radius-sm);
-  font-size: var(--cp-font-size-xs);
-  display: inline-block;
-}
-
 .ctp-cursor {
   animation: blink 1s step-end infinite;
 }
@@ -512,7 +449,7 @@ onMounted(async () => {
   color: #1a1a2e;
   font-size: var(--cp-font-size-sm);
   line-height: 1.5;
-  min-height: 40px;
+  min-height: 38px;
   max-height: 160px;
 }
 
@@ -522,7 +459,9 @@ onMounted(async () => {
 }
 
 .ctp-send-btn {
-  padding: var(--cp-space-2) var(--cp-space-4);
+  height: 42px;
+  line-height: 42px;
+  padding: 0 var(--cp-space-4);
   border: 1px solid var(--cp-color-primary);
   border-radius: var(--cp-radius-sm);
   background: var(--cp-color-primary);
@@ -530,7 +469,7 @@ onMounted(async () => {
   font-size: var(--cp-font-size-sm);
   font-weight: 500;
   cursor: pointer;
-  align-self: flex-end;
+  align-self: center;
   transition: opacity var(--cp-transition-fast);
 }
 
@@ -540,51 +479,6 @@ onMounted(async () => {
 }
 
 .ctp-send-btn:hover:not(:disabled) {
-  opacity: 0.85;
-}
-
-.ctp-attach-preview {
-  display: flex;
-  align-items: center;
-  gap: var(--cp-space-2);
-  margin-top: var(--cp-space-2);
-  padding: var(--cp-space-1) var(--cp-space-3);
-  background: var(--cp-color-card);
-  border: 1px solid var(--cp-color-border);
-  border-radius: var(--cp-radius-sm);
-  font-size: var(--cp-font-size-xs);
-}
-
-.ctp-attach-remove {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--cp-color-text-muted);
-  font-size: var(--cp-font-size-lg);
-  line-height: 1;
-  padding: 0 var(--cp-space-1);
-}
-
-.ctp-actions {
-  margin-top: var(--cp-space-2);
-}
-
-.ctp-file-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--cp-space-1);
-  padding: var(--cp-space-1) var(--cp-space-3);
-  font-size: var(--cp-font-size-xs);
-  font-weight: 500;
-  cursor: pointer;
-  color: #fff;
-  border: 1px solid var(--cp-color-primary);
-  border-radius: var(--cp-radius-sm);
-  background: var(--cp-color-primary);
-  transition: opacity var(--cp-transition-fast);
-}
-
-.ctp-file-btn:hover {
   opacity: 0.85;
 }
 

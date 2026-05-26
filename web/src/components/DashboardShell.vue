@@ -102,8 +102,9 @@ const baseUrl = computed(() => appStore.status?.base_url ?? '')
   border: 1px solid var(--cp-color-border);
   border-radius: var(--cp-radius-lg);
   background: var(--cp-color-surface);
-  backdrop-filter: blur(3px) saturate(180%) brightness(1.06);
-  -webkit-backdrop-filter: blur(3px) saturate(180%) brightness(1.06);
+  backdrop-filter: blur(10px) saturate(150%) contrast(0.95);
+  -webkit-backdrop-filter: blur(10px) saturate(150%) contrast(0.95);
+  transition: background var(--cp-transition-med);
 }
 
 .shell-title-group {
@@ -118,6 +119,7 @@ const baseUrl = computed(() => appStore.status?.base_url ?? '')
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--cp-color-primary);
+  text-shadow: var(--cp-text-shadow-sm);
 }
 
 .shell-title {
@@ -126,6 +128,7 @@ const baseUrl = computed(() => appStore.status?.base_url ?? '')
   font-weight: 700;
   letter-spacing: -0.03em;
   color: var(--cp-color-text);
+  text-shadow: var(--cp-text-shadow-md), var(--cp-text-outline);
 }
 
 .shell-status-area,
@@ -156,6 +159,7 @@ const baseUrl = computed(() => appStore.status?.base_url ?? '')
   border: 1px solid var(--cp-color-border);
   border-radius: 999px;
   color: var(--cp-color-text-secondary);
+  text-shadow: var(--cp-text-shadow-md);
 }
 
 .status-dot {
@@ -189,6 +193,7 @@ const baseUrl = computed(() => appStore.status?.base_url ?? '')
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--cp-color-text-muted);
+  text-shadow: var(--cp-text-shadow-sm);
 }
 
 .shell-refresh {

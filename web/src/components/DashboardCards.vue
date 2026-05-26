@@ -70,7 +70,7 @@ const cards = computed(() => [
   border: 1px solid var(--cp-color-border);
   border-radius: var(--cp-radius-md);
   background: var(--cp-color-card);
-  transition: all var(--cp-transition-fast);
+  transition: background var(--cp-transition-med), transform var(--cp-transition-fast), box-shadow var(--cp-transition-fast);
 }
 
 .metric-card:hover {
@@ -82,6 +82,7 @@ const cards = computed(() => [
   font-size: var(--cp-font-size-xs);
   font-weight: 500;
   color: var(--cp-color-text-muted);
+  text-shadow: var(--cp-text-shadow-sm);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -90,12 +91,14 @@ const cards = computed(() => [
   font-size: clamp(var(--cp-font-size-xl), 2vw, 28px);
   font-weight: 700;
   color: var(--cp-color-text);
+  text-shadow: var(--cp-text-shadow-md), var(--cp-text-outline);
   line-height: 1.1;
 }
 
 .metric-meta {
   font-size: var(--cp-font-size-xs);
   color: var(--cp-color-text-muted);
+  text-shadow: var(--cp-text-shadow-sm);
 }
 
 .meta-success { color: var(--cp-color-success); }

@@ -2,9 +2,6 @@
 .vscode/
 .idea/
 .DS_Store
-.codegraph/
-AGENTS.md
-.sisyphus/
 
 # go
 bin/
@@ -12,8 +9,6 @@ bin/
 vendor/
 
 # build
-*.exe
-internal/web/dist/
 /copilot-proxy
 *.exe
 *.exe~
@@ -25,7 +20,7 @@ package-lock.json
 yarn.lock
 
 # config
-/config/
+config/
 
 # tmp
 test/

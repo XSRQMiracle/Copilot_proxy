@@ -207,10 +207,10 @@ onUnmounted(() => {
   background: var(--cp-color-surface);
   border: 1px solid var(--cp-color-border);
   border-radius: var(--cp-radius-lg);
-  backdrop-filter: blur(3px) saturate(180%) brightness(1.06);
-  -webkit-backdrop-filter: blur(3px) saturate(180%) brightness(1.06);
+  backdrop-filter: blur(10px) saturate(150%) contrast(0.95);
+  -webkit-backdrop-filter: blur(10px) saturate(150%) contrast(0.95);
   overflow: hidden;
-  transition: box-shadow var(--cp-transition-med);
+  transition: box-shadow var(--cp-transition-med), background var(--cp-transition-med);
 }
 
 .dash-card-header {
@@ -227,6 +227,7 @@ onUnmounted(() => {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--cp-color-text-muted);
+  text-shadow: var(--cp-text-shadow-sm), var(--cp-text-outline);
 }
 
 .dash-card-btn {
@@ -240,6 +241,7 @@ onUnmounted(() => {
   border-radius: var(--cp-radius-sm);
   background: transparent;
   color: var(--cp-color-primary);
+  text-shadow: var(--cp-text-shadow-sm);
   cursor: pointer;
   outline: none;
   transition: all var(--cp-transition-fast);
@@ -261,6 +263,7 @@ onUnmounted(() => {
 .placeholder-body {
   min-height: 220px;
   color: var(--cp-color-text-secondary);
+  text-shadow: var(--cp-text-shadow-sm);
 }
 
 .placeholder-body p {

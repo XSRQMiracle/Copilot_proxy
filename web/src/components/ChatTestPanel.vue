@@ -196,6 +196,7 @@ onMounted(async () => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  transition: background var(--cp-transition-med);
 }
 
 .chat-test-header {
@@ -210,6 +211,7 @@ onMounted(async () => {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--cp-color-text-muted);
+  text-shadow: var(--cp-text-shadow-sm);
 }
 
 .chat-test-body {
@@ -243,6 +245,7 @@ onMounted(async () => {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--cp-color-text-muted);
+  text-shadow: var(--cp-text-shadow-sm);
 }
 
 .ctp-sidebar-body {
@@ -276,6 +279,7 @@ onMounted(async () => {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--cp-color-text-muted);
+  text-shadow: var(--cp-text-shadow-sm);
 }
 
 .ctp-current-model {
@@ -291,6 +295,7 @@ onMounted(async () => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-shadow: var(--cp-text-shadow-sm);
 }
 
 /* ── 公共 ── */
@@ -314,6 +319,7 @@ onMounted(async () => {
   color: var(--cp-color-text);
   font-size: var(--cp-font-size-xs);
   box-sizing: border-box;
+  text-shadow: var(--cp-text-shadow-sm);
 }
 
 .ctp-search:focus {
@@ -351,6 +357,7 @@ onMounted(async () => {
   font-size: var(--cp-font-size-sm);
   font-weight: 500;
   color: var(--cp-color-text);
+  text-shadow: var(--cp-text-shadow-sm);
 }
 
 .ctp-model-vendor {
@@ -413,6 +420,7 @@ onMounted(async () => {
   word-break: break-word;
   font-size: var(--cp-font-size-sm);
   line-height: 1.5;
+  text-shadow: var(--cp-text-shadow-sm);
 }
 
 .ctp-msg-row.user .ctp-msg-text {
@@ -445,8 +453,8 @@ onMounted(async () => {
   padding: var(--cp-space-2) var(--cp-space-3);
   border: 1px solid var(--cp-color-border);
   border-radius: var(--cp-radius-sm);
-  background: #fff;
-  color: #1a1a2e;
+  background: var(--cp-color-surface);
+  color: var(--cp-color-text);
   font-size: var(--cp-font-size-sm);
   line-height: 1.5;
   min-height: 38px;

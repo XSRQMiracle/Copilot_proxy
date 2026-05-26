@@ -63,8 +63,9 @@ onUnmounted(() => {
   font-size: 20px;
   font-weight: 600;
   white-space: nowrap;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--cp-shadow-float);
   pointer-events: none;
+  text-shadow: var(--cp-text-shadow-sm);
 }
 
 .conn-banner.disconnected {
@@ -87,6 +88,7 @@ onUnmounted(() => {
 
 .conn-banner__text {
   line-height: 1;
+  text-shadow: var(--cp-text-shadow-sm);
 }
 
 /* Slide-in from right */

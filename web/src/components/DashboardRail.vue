@@ -75,7 +75,7 @@ const { t } = useI18n()
   -webkit-backdrop-filter: blur(3px) saturate(180%) brightness(1.06);
   overflow: hidden;
   box-shadow: var(--cp-shadow-card);
-  transition: box-shadow var(--cp-transition-med);
+  transition: box-shadow var(--cp-transition-med), background var(--cp-transition-med);
 }
 
 .rail-tab {
@@ -118,6 +118,7 @@ const { t } = useI18n()
   overflow: hidden;
   font-size: var(--cp-font-size-sm);
   font-weight: 600;
+  text-shadow: var(--cp-text-shadow-md);
   white-space: nowrap;
 }
 </style>
